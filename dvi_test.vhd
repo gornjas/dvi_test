@@ -64,6 +64,7 @@ architecture x of dvi_test is
     signal M_line: T_linebuf;
 
     -- pixclk domain, (mostly) static linemode configuration data
+    signal R_mode: natural;
     signal R_hdisp: std_logic_vector(11 downto 0);
     signal R_hsyncstart: std_logic_vector(11 downto 0);
     signal R_hsyncend: std_logic_vector(11 downto 0);
@@ -83,10 +84,12 @@ architecture x of dvi_test is
     signal dv_hpos: std_logic_vector(10 downto 0);
     signal dv_vsync, dv_hsync, dv_frame, dv_active: std_logic;
 
+    -- pixclk -> clk clock domain crossing synchronizers
+    signal R_t_hsync_sync, R_t_vsync_sync: std_logic_vector(2 downto 0);
+    signal R_t_active_sync, R_t_frame_sync: std_logic_vector(2 downto 0);
+    signal R_t_interlace_sync: std_logic_vector(2 downto 0);
+
     -- main clk domain
-    signal R_mode: natural;
-    signal R_t_hsync_sync, R_t_vsync_sync, R_t_active_sync, R_t_frame_sync:
-      std_logic_vector(2 downto 0);
     signal R_t_hpos, R_t_vpos: std_logic_vector(11 downto 0);
     signal R_t_framecnt: std_logic_vector(9 downto 0);
     signal R_t_active: boolean;
@@ -108,6 +111,8 @@ begin
 	      dv_active & R_t_active_sync(R_t_active_sync'high downto 1);
 	    R_t_frame_sync <=
 	      dv_frame & R_t_frame_sync(R_t_frame_sync'high downto 1);
+	    R_t_interlace_sync <= R_interlace
+	      & R_t_interlace_sync(R_t_interlace_sync'high downto 1);
 
 	    if R_t_active_sync(0) = '1' then
 		R_t_active <= true;
@@ -120,7 +125,7 @@ begin
 	    elsif R_t_hsync_sync(1 downto 0) = "10" then
 		if R_t_active then
 		    R_t_vpos <= R_t_vpos + 1;
-		    if R_interlace = '1' then
+		    if R_T_interlace_sync(0) = '1' then
 			R_t_vpos <= R_t_vpos + 2;
 		    end if;
 		end if;
