@@ -17,7 +17,6 @@ entity dv_syncgen is
 	vtotal: in std_logic_vector(10 downto 0);
 	interlace: in std_logic;
 	-- outputs: sync signals
-	hpos: out std_logic_vector(10 downto 0);
 	hsync: out std_logic;
 	vsync: out std_logic;
 	frame: out std_logic;
@@ -26,6 +25,17 @@ entity dv_syncgen is
 end dv_syncgen;
 
 architecture x of dv_syncgen is
+    -- configuration registers, synchronized to pixclk
+    signal R_hdisp: std_logic_vector(11 downto 0);
+    signal R_hsyncstart: std_logic_vector(11 downto 0);
+    signal R_hsyncend: std_logic_vector(11 downto 0);
+    signal R_htotal: std_logic_vector(11 downto 0);
+    signal R_vdisp: std_logic_vector(10 downto 0);
+    signal R_vsyncstart: std_logic_vector(10 downto 0);
+    signal R_vsyncend: std_logic_vector(10 downto 0);
+    signal R_vtotal: std_logic_vector(10 downto 0);
+    signal R_interlace: std_logic;
+
     signal R_hstate: std_logic_vector(1 downto 0) := (others => '0');
     signal R_vstate: std_logic_vector(1 downto 0) := (others => '0');
     signal R_hpos: std_logic_vector(11 downto 0) := (others => '0');
@@ -44,12 +54,23 @@ begin
 	variable hsync: boolean;
     begin
 	if rising_edge(pixclk) then
+	    -- configuration registers, synchronizing to pixclk
+	    R_hdisp <= hdisp;
+	    R_hsyncstart <= hsyncstart;
+	    R_hsyncend <= hsyncend;
+	    R_htotal <= htotal;
+	    R_vdisp <= vdisp;
+	    R_vsyncstart <= vsyncstart;
+	    R_vsyncend <= vsyncend;
+	    R_vtotal <= vtotal;
+	    R_interlace <= interlace;
+
 	    R_hpos <= R_hpos + 1;
 	    hsync := false;
 	    if R_hpos = R_hbound(11 downto 0) then
 		R_hstate <= R_hstate + 1;
 		if R_hstate = "11" then
-		    R_hbound <= htotal & hsyncend & hsyncstart & hdisp;
+		    R_hbound <= R_htotal & R_hsyncend & R_hsyncstart & R_hdisp;
 		    R_hpos <= conv_std_logic_vector(1, 12);
 		else
 		    R_hbound(35 downto 0) <= R_hbound(47 downto 12);
@@ -71,35 +92,36 @@ begin
 	    end if;
 	    if hsync then
 		R_vpos <= R_vpos + 1;
-		if interlace = '1' then
+		if R_interlace = '1' then
 		    R_vpos <= R_vpos + 2;
 		end if;
 		if R_vpos(10 downto 1) = R_vbound(10 downto 1) and
-		  (interlace = '1' or (R_vpos(0) = R_vbound(0))) then
+		  (R_interlace = '1' or (R_vpos(0) = R_vbound(0))) then
 		    R_vstate <= R_vstate + 1;
 		    R_vbound(32 downto 0) <= R_vbound(43 downto 11);
 		    case R_vstate is
 		    when "00" =>
-			R_frame <= interlace and not R_frame;
+			R_frame <= R_interlace and not R_frame;
 		    when "01" =>
 			if R_frame = '0' then
 			    R_vsync <= '1';
 			else
-			    R_vsync_delay <= '0' & htotal(11 downto 1);
+			    R_vsync_delay <= '0' & R_htotal(11 downto 1);
 			end if;
 		    when "10" =>
 			if R_frame = '0' then
 			    R_vsync <= '0';
 			else
-			    R_vsync_delay <= '0' & htotal(11 downto 1);
+			    R_vsync_delay <= '0' & R_htotal(11 downto 1);
 			end if;
 		    when "11" =>
-			R_vbound <= vtotal & vsyncend & vsyncstart & vdisp;
+			R_vbound <=
+			    R_vtotal & R_vsyncend & R_vsyncstart & R_vdisp;
 			R_vpos <= conv_std_logic_vector(1, 11);
-			if interlace = '1' then
+			if R_interlace = '1' then
 			    if R_frame = '0' then
 				R_vpos <= conv_std_logic_vector(2, 11);
-			    elsif vtotal(0) = '1' then
+			    elsif R_vtotal(0) = '1' then
 				R_skip_line <= true;
 			    end if;
 			end if;
@@ -117,7 +139,6 @@ begin
 	end if;
     end process;
 
-    hpos <= R_hpos(10 downto 0) when R_active = '1' else (others => '0');
     hsync <= R_hsync;
     vsync <= R_vsync;
     frame <= R_frame;

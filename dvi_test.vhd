@@ -59,11 +59,37 @@ architecture x of dvi_test is
 	)
     );
 
-    type T_linebuf is array (0 to 2047) of
+    type T_fifo is array (0 to 2047) of
       std_logic_vector(C_bpp * 3 - 1 downto 0);
-    signal M_line: T_linebuf;
+    signal M_fifo: T_fifo; -- WR in clk, RD in pixclk clock domain
+    attribute syn_ramstyle: string; -- Lattice Diamond
+    attribute syn_ramstyle of M_fifo: signal is "no_rw_check";
 
-    -- pixclk domain, (mostly) static linemode configuration data
+    -- pixclk domain, registers
+    signal R_fifo_tail: std_logic_vector(10 downto 0);
+    signal R_r_mem, R_g_mem, R_b_mem: std_logic_vector(C_bpp - 1 downto 0);
+    signal R_r, R_g, R_b: std_logic_vector(7 downto 0);
+    signal R_hsync, R_vsync, R_blank: std_logic;
+
+    -- pixclk domain, wires
+    signal dv_vsync, dv_hsync, dv_frame, dv_active: std_logic;
+
+    -- pixclk -> clk clock domain crossing synchronizers
+    signal R_t_hsync_sync, R_t_vsync_sync: std_logic_vector(2 downto 0);
+    signal R_t_active_sync, R_t_frame_sync: std_logic_vector(2 downto 0);
+    signal R_t_interlace_sync: std_logic_vector(2 downto 0);
+    signal R_t_fifo_sync: std_logic_vector(2 downto 0);
+
+    -- main clk domain, fifo clk -> pixclk clock domain
+    signal R_fifo_tail_cdc: std_logic_vector(10 downto 4);
+    signal R_fifo_head: std_logic_vector(10 downto 0);
+
+    -- main clk domain, test picture generator
+    signal R_t_hpos, R_t_vpos: std_logic_vector(11 downto 0);
+    signal R_t_framecnt: std_logic_vector(9 downto 0);
+    signal R_t_active: boolean;
+
+    -- clk domain, (mostly) static linemode configuration data
     signal R_mode: natural;
     signal R_hdisp: std_logic_vector(11 downto 0);
     signal R_hsyncstart: std_logic_vector(11 downto 0);
@@ -75,64 +101,45 @@ architecture x of dvi_test is
     signal R_vtotal: std_logic_vector(10 downto 0);
     signal R_interlace: std_logic;
 
-    -- pixclk domain, registers
-    signal R_r_mem, R_g_mem, R_b_mem: std_logic_vector(C_bpp - 1 downto 0);
-    signal R_r, R_g, R_b: std_logic_vector(7 downto 0);
-    signal R_hsync, R_vsync, R_blank: std_logic;
-
-    -- pixclk domain, wires
-    signal dv_hpos: std_logic_vector(10 downto 0);
-    signal dv_vsync, dv_hsync, dv_frame, dv_active: std_logic;
-
-    -- pixclk -> clk clock domain crossing synchronizers
-    signal R_t_hsync_sync, R_t_vsync_sync: std_logic_vector(2 downto 0);
-    signal R_t_active_sync, R_t_frame_sync: std_logic_vector(2 downto 0);
-    signal R_t_interlace_sync: std_logic_vector(2 downto 0);
-
-    -- main clk domain
-    signal R_t_hpos, R_t_vpos: std_logic_vector(11 downto 0);
-    signal R_t_framecnt: std_logic_vector(9 downto 0);
-    signal R_t_active: boolean;
-
 begin
     -- Test picture generator
     process(clk)
+	variable fifo_head_next: std_logic_vector(10 downto 0);
 	variable tsum1, tsum2: std_logic_vector(11 downto 0);
 	variable r, g, b: std_logic_vector(7 downto 0);
 	variable wa: natural;
     begin
 	if rising_edge(clk) then
-	    -- clock-domain crossing synchronizers (from pixclk)
-	    R_t_hsync_sync <=
-	      dv_hsync & R_t_hsync_sync(R_t_hsync_sync'high downto 1);
-	    R_t_vsync_sync <=
-	      dv_vsync & R_t_vsync_sync(R_t_vsync_sync'high downto 1);
-	    R_t_active_sync <=
-	      dv_active & R_t_active_sync(R_t_active_sync'high downto 1);
-	    R_t_frame_sync <=
-	      dv_frame & R_t_frame_sync(R_t_frame_sync'high downto 1);
-	    R_t_interlace_sync <= R_interlace
-	      & R_t_interlace_sync(R_t_interlace_sync'high downto 1);
+	    -- configuration
+	    R_mode <= conv_integer(mode);
+	    R_hdisp <= conv_std_logic_vector(C_ml(R_mode).hdisp, 12);
+	    R_hsyncstart <= conv_std_logic_vector(C_ml(R_mode).hsyncstart, 12);
+	    R_hsyncend <= conv_std_logic_vector(C_ml(R_mode).hsyncend, 12);
+	    R_htotal <= conv_std_logic_vector(C_ml(R_mode).htotal, 12);
+	    R_vdisp <= conv_std_logic_vector(C_ml(R_mode).vdisp, 11);
+	    R_vsyncstart <= conv_std_logic_vector(C_ml(R_mode).vsyncstart, 11);
+	    R_vsyncend <= conv_std_logic_vector(C_ml(R_mode).vsyncend, 11);
+	    R_vtotal <= conv_std_logic_vector(C_ml(R_mode).vtotal, 11);
+	    R_interlace <= conv_std_logic_vector(C_ml(R_mode).interlace, 1)(0);
 
-	    if R_t_active_sync(0) = '1' then
-		R_t_active <= true;
+	    -- clock-domain crossing synchronizers (from pixclk)
+	    R_t_fifo_sync <= R_fifo_tail(4) & R_t_fifo_sync(2 downto 1);
+
+	    if R_t_fifo_sync(1) /= R_t_fifo_sync(0) then
+		R_fifo_tail_cdc <= R_fifo_tail(10 downto 4);
 	    end if;
-	    if R_t_vsync_sync(1 downto 0) = "10" then
-		R_t_framecnt <= R_t_framecnt + not R_t_frame_sync(0);
-		R_t_hpos <= (others => '0');
-		R_t_vpos <= (others => '0');
-		R_t_vpos(0) <= R_t_frame_sync(0);
-	    elsif R_t_hsync_sync(1 downto 0) = "10" then
-		if R_t_active then
+
+	    fifo_head_next := R_fifo_head + 1;
+	    if R_fifo_tail_cdc /= fifo_head_next(10 downto 4) then
+		R_fifo_head <= fifo_head_next;
+		R_t_hpos <= R_t_hpos + 1;
+		if R_t_hpos = R_hdisp then
+		    R_t_hpos <= conv_std_logic_vector(1, 12);
 		    R_t_vpos <= R_t_vpos + 1;
-		    if R_T_interlace_sync(0) = '1' then
-			R_t_vpos <= R_t_vpos + 2;
+		    if R_t_vpos = R_vdisp then
+			R_t_vpos <= conv_std_logic_vector(1, 12);
 		    end if;
 		end if;
-		R_t_active <= false;
-		R_t_hpos <= (others => '0');
-	    elsif R_t_active_sync(0) = '1' then
-		R_t_hpos <= R_t_hpos + 1;
 	    end if;
 
 	    tsum1 := R_t_hpos + R_t_vpos + R_t_framecnt;
@@ -163,10 +170,10 @@ begin
 		end if;
 	    end if;
 
-	    wa := conv_integer(R_t_hpos);
-	    M_line(wa)(C_bpp * 3 - 1 downto C_bpp * 2) <= r(7 downto 8 - C_bpp);
-	    M_line(wa)(C_bpp * 2 - 1 downto C_bpp) <= g(7 downto 8 - C_bpp);
-	    M_line(wa)(C_bpp - 1 downto 0) <= b(7 downto 8 - C_bpp);
+	    wa := conv_integer(R_fifo_head);
+	    M_fifo(wa)(C_bpp * 3 - 1 downto C_bpp * 2) <= r(7 downto 8 - C_bpp);
+	    M_fifo(wa)(C_bpp * 2 - 1 downto C_bpp) <= g(7 downto 8 - C_bpp);
+	    M_fifo(wa)(C_bpp - 1 downto 0) <= b(7 downto 8 - C_bpp);
 	end if;
     end process;
 
@@ -184,7 +191,6 @@ begin
 	vtotal => R_vtotal,
 	interlace => R_interlace,
 	-- outputs
-	hpos => dv_hpos,
 	hsync => dv_hsync,
 	vsync => dv_vsync,
 	frame => dv_frame,
@@ -195,23 +201,17 @@ begin
 	variable ra: natural;
     begin
 	if rising_edge(pixclk) then
-	    -- configuration
-	    R_mode <= conv_integer(mode);
-	    R_hdisp <= conv_std_logic_vector(C_ml(R_mode).hdisp, 12);
-	    R_hsyncstart <= conv_std_logic_vector(C_ml(R_mode).hsyncstart, 12);
-	    R_hsyncend <= conv_std_logic_vector(C_ml(R_mode).hsyncend, 12);
-	    R_htotal <= conv_std_logic_vector(C_ml(R_mode).htotal, 12);
-	    R_vdisp <= conv_std_logic_vector(C_ml(R_mode).vdisp, 11);
-	    R_vsyncstart <= conv_std_logic_vector(C_ml(R_mode).vsyncstart, 11);
-	    R_vsyncend <= conv_std_logic_vector(C_ml(R_mode).vsyncend, 11);
-	    R_vtotal <= conv_std_logic_vector(C_ml(R_mode).vtotal, 11);
-	    R_interlace <= conv_std_logic_vector(C_ml(R_mode).interlace, 1)(0);
-
 	    -- from line buffer and dv_syncgen to vga2dvid
-	    ra := conv_integer(dv_hpos);
-	    R_r_mem <= M_line(ra)(C_bpp * 3 - 1 downto C_bpp * 2);
-	    R_g_mem <= M_line(ra)(C_bpp * 2 - 1 downto C_bpp);
-	    R_b_mem <= M_line(ra)(C_bpp - 1 downto 0);
+	    R_blank <= not dv_active;
+	    R_hsync <= dv_hsync;
+	    R_vsync <= dv_vsync;
+	    if dv_active = '1' then
+		R_fifo_tail <= R_fifo_tail + 1;
+	    end if;
+	    ra := conv_integer(R_fifo_tail);
+	    R_r_mem <= M_fifo(ra)(C_bpp * 3 - 1 downto C_bpp * 2);
+	    R_g_mem <= M_fifo(ra)(C_bpp * 2 - 1 downto C_bpp);
+	    R_b_mem <= M_fifo(ra)(C_bpp - 1 downto 0);
 	    R_r(7 downto 8 - C_bpp) <= R_r_mem;
 	    R_g(7 downto 8 - C_bpp) <= R_g_mem;
 	    R_b(7 downto 8 - C_bpp) <= R_b_mem;
@@ -237,9 +237,6 @@ begin
 		R_b <= (others => R_b_mem(0));
 	    when others =>
 	    end case;
-	    R_hsync <= dv_hsync;
-	    R_vsync <= dv_vsync;
-	    R_blank <= not dv_active;
 	end if;
     end process;
 

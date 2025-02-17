@@ -56,9 +56,9 @@ begin
     );
     end generate;
 
-    process(pixclk)
+    process(clk)
     begin
-	if rising_edge(pixclk) then
+	if rising_edge(clk) then
 	    -- mode select
 	    R_key_sync <= btn_up & btn_down;
 	    if R_key_last /= R_key_sync then
