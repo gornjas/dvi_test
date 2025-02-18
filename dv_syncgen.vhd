@@ -21,7 +21,7 @@ entity dv_syncgen is
 	vsync: out std_logic;
 	active: out std_logic;
 	frame: out std_logic;
-	frame_done: out std_logic
+	frame_gap: out std_logic
     );
 end dv_syncgen;
 
@@ -49,7 +49,7 @@ architecture x of dv_syncgen is
     signal R_vsync: std_logic := '0';
     signal R_active: std_logic := '0';
     signal R_frame: std_logic := '0';
-    signal R_frame_done: std_logic := '0';
+    signal R_frame_gap: std_logic := '0';
 
 begin
     process(pixclk)
@@ -104,7 +104,7 @@ begin
 		    case R_vstate is
 		    when "00" =>
 			R_frame <= R_interlace and not R_frame;
-			R_frame_done <= not R_interlace or R_frame;
+			R_frame_gap <= not R_interlace or R_frame;
 		    when "01" =>
 			if R_frame = '0' then
 			    R_vsync <= '1';
@@ -129,7 +129,7 @@ begin
 			    end if;
 			end if;
 			if R_interlace = '0' or R_frame = '0' then
-			    R_frame_done <= '0';
+			    R_frame_gap <= '0';
 			end if;
 		    when others =>
 			-- nothing to do, appease the tools
@@ -149,5 +149,5 @@ begin
     vsync <= R_vsync;
     active <= R_active;
     frame <= R_frame;
-    frame_done <= R_frame_done;
+    frame_gap <= R_frame_gap;
 end x;

@@ -69,16 +69,17 @@ architecture x of dvi_test is
 
     -- pixclk domain, wires
     signal dv_vsync, dv_hsync, dv_frame, dv_active: std_logic;
-    signal dv_frame_done: std_logic;
+    signal dv_frame_gap: std_logic;
 
     -- pixclk -> clk clock domain crossing synchronizers
     signal R_t_fifo_sync: std_logic_vector(2 downto 0);
     signal R_t_frame_sync: std_logic_vector(2 downto 0);
-    signal R_t_frame_done_sync: std_logic_vector(2 downto 0);
+    signal R_t_frame_gap_sync: std_logic_vector(2 downto 0);
 
     -- main clk domain, fifo clk -> pixclk clock domain
     signal R_fifo_tail_cdc: std_logic_vector(8 downto 4);
     signal R_fifo_head: std_logic_vector(8 downto 0);
+    signal R_to_fifo: std_logic_vector(23 downto 0);
 
     -- main clk domain, test picture generator
     signal R_t_hpos, R_t_vpos: std_logic_vector(11 downto 0);
@@ -119,22 +120,21 @@ begin
 	    -- clock-domain crossing synchronizers (from pixclk)
 	    R_t_fifo_sync <= R_fifo_tail(4) & R_t_fifo_sync(2 downto 1);
 	    R_t_frame_sync <= dv_frame & R_t_frame_sync(2 downto 1);
-	    R_t_frame_done_sync <=
-	      dv_frame_done & R_t_frame_done_sync(2 downto 1);
+	    R_t_frame_gap_sync <= dv_frame_gap & R_t_frame_gap_sync(2 downto 1);
 
 	    if R_t_fifo_sync(1) /= R_t_fifo_sync(0)
-	      or R_t_frame_done_sync(0) = '1' then
+	      or R_t_frame_gap_sync(0) = '1' then
 		R_fifo_tail_cdc <= R_fifo_tail(8 downto 4);
 	    end if;
 
-	    if R_t_frame_done_sync(0) = '1' then
+	    if R_t_frame_gap_sync(0) = '1' then
 		R_fifo_head <= (others => '0');
 		R_t_hpos <= (others => '0');
 		R_t_vpos <= (others => '0');
-		if R_t_frame_done_sync(1) = '0' then
+		if R_t_frame_gap_sync(1) = '0' then
 		    R_t_framecnt <= R_t_framecnt + 1;
 		end if;
-	    elsif R_t_frame_done_sync(0) = '0' and
+	    elsif R_t_frame_gap_sync(0) = '0' and
 	      R_fifo_tail_cdc /= R_fifo_head(8 downto 4) + 1 then
 		R_fifo_head <= R_fifo_head + 1;
 		R_t_hpos <= R_t_hpos + 1;
@@ -179,7 +179,8 @@ begin
 		end if;
 	    end if;
 
-	    M_fifo(conv_integer(R_fifo_head)) <= r & g & b;
+	    R_to_fifo <= r & g & b;
+	    M_fifo(conv_integer(R_fifo_head)) <= R_to_fifo;
 	end if;
     end process;
 
@@ -201,7 +202,7 @@ begin
 	vsync => dv_vsync,
 	active => dv_active,
 	frame => dv_frame,
-	frame_done => dv_frame_done
+	frame_gap => dv_frame_gap
     );
 
     process(pixclk)
@@ -211,7 +212,7 @@ begin
 	    R_blank <= not dv_active;
 	    R_hsync <= dv_hsync;
 	    R_vsync <= dv_vsync;
-	    if dv_frame_done = '1' then
+	    if dv_frame_gap = '1' then
 		R_fifo_tail <= (others => '0');
 	    elsif dv_active = '1' then
 		R_fifo_tail <= R_fifo_tail + 1;
