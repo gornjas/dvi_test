@@ -79,7 +79,6 @@ architecture x of dvi_test is
     -- main clk domain, fifo clk -> pixclk clock domain
     signal R_fifo_tail_cdc: std_logic_vector(8 downto 4);
     signal R_fifo_head: std_logic_vector(8 downto 0);
-    signal R_to_fifo: std_logic_vector(23 downto 0);
 
     -- main clk domain, test picture generator
     signal R_t_hpos, R_t_vpos: std_logic_vector(11 downto 0);
@@ -179,8 +178,7 @@ begin
 		end if;
 	    end if;
 
-	    R_to_fifo <= r & g & b;
-	    M_fifo(conv_integer(R_fifo_head)) <= R_to_fifo;
+	    M_fifo(conv_integer(R_fifo_head)) <= r & g & b;
 	end if;
     end process;
 

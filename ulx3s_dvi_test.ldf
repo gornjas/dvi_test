@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<BaliProject version="3.2" title="ulx3s_dvi_test" device="LFE5U-12F-6BG381C" default_implementation="impl1">
+<BaliProject version="3.2" title="ulx3s_dvi_test" device="LFE5U-12F-7BG381C" default_implementation="impl1">
     <Options/>
     <Implementation title="impl1" dir="impl1" description="impl1" synthesis="synplify" default_strategy="Timing">
         <Options def_top="top_dvi_test"/>

@@ -28,7 +28,7 @@ begin
     I_pll: entity work.pll_25m
     port map(
 	clk_25m => clk_25m,
-	clk_112m5 => clk,
+	clk_123m75 => clk,
 	clk_74m25 => pixclk,
 	clk_371m25 => pixclk_x5
     );
