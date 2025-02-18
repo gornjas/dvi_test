@@ -104,7 +104,7 @@ begin
 	variable r, g, b: std_logic_vector(7 downto 0);
     begin
 	if rising_edge(clk) then
-	    -- configuration
+	    -- configuration, effectively static
 	    R_mode <= conv_integer(mode);
 	    R_hdisp <= conv_std_logic_vector(C_ml(R_mode).hdisp, 12);
 	    R_hsyncstart <= conv_std_logic_vector(C_ml(R_mode).hsyncstart, 12);
@@ -146,8 +146,8 @@ begin
 		end if;
 	    end if;
 
-	    if R_t_frame_sync(1 downto 0) = "01" then
-		R_t_hpos <= conv_std_logic_vector(2, 12);
+	    if R_t_frame_sync(1 downto 0) = "10" then
+		R_t_vpos <= conv_std_logic_vector(1, 12);
 	    end if;
 
 	    tsum1 := R_t_hpos + R_t_vpos + R_t_framecnt;
