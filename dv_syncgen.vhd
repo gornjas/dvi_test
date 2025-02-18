@@ -117,7 +117,6 @@ begin
 			else
 			    R_vsync_delay <= '0' & R_htotal(11 downto 1);
 			end if;
-			R_frame_done <= '0';
 		    when "11" =>
 			R_vbound <=
 			    R_vtotal & R_vsyncend & R_vsyncstart & R_vdisp;
@@ -128,6 +127,9 @@ begin
 			    elsif R_vtotal(0) = '1' then
 				R_skip_line <= true;
 			    end if;
+			end if;
+			if R_interlace = '0' or R_frame = '0' then
+			    R_frame_done <= '0';
 			end if;
 		    when others =>
 			-- nothing to do, appease the tools
