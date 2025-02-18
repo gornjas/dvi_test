@@ -4,9 +4,6 @@ use ieee.std_logic_arith.all;
 use ieee.std_logic_unsigned.all;
 
 entity dvi_test is
-    generic (
-	C_bpp: natural := 8
-    );
     port (
 	clk, pixclk, pixclk_x5: in std_logic;
 	mode: in std_logic_vector(3 downto 0);
@@ -59,15 +56,14 @@ architecture x of dvi_test is
 	)
     );
 
-    type T_fifo is array (0 to 2047) of
-      std_logic_vector(C_bpp * 3 - 1 downto 0);
+    type T_fifo is array (0 to 511) of std_logic_vector(23 downto 0);
     signal M_fifo: T_fifo; -- WR in clk, RD in pixclk clock domain
     attribute syn_ramstyle: string; -- Lattice Diamond
     attribute syn_ramstyle of M_fifo: signal is "no_rw_check";
 
     -- pixclk domain, registers
-    signal R_fifo_tail: std_logic_vector(10 downto 0);
-    signal R_r_mem, R_g_mem, R_b_mem: std_logic_vector(C_bpp - 1 downto 0);
+    signal R_fifo_tail: std_logic_vector(8 downto 0);
+    signal R_from_fifo: std_logic_vector(23 downto 0);
     signal R_r, R_g, R_b: std_logic_vector(7 downto 0);
     signal R_hsync, R_vsync, R_blank: std_logic;
 
@@ -81,8 +77,8 @@ architecture x of dvi_test is
     signal R_t_frame_done_sync: std_logic_vector(2 downto 0);
 
     -- main clk domain, fifo clk -> pixclk clock domain
-    signal R_fifo_tail_cdc: std_logic_vector(10 downto 4);
-    signal R_fifo_head: std_logic_vector(10 downto 0);
+    signal R_fifo_tail_cdc: std_logic_vector(8 downto 4);
+    signal R_fifo_head: std_logic_vector(8 downto 0);
 
     -- main clk domain, test picture generator
     signal R_t_hpos, R_t_vpos: std_logic_vector(11 downto 0);
@@ -106,7 +102,6 @@ begin
     process(clk)
 	variable tsum1, tsum2: std_logic_vector(11 downto 0);
 	variable r, g, b: std_logic_vector(7 downto 0);
-	variable wa: natural;
     begin
 	if rising_edge(clk) then
 	    -- configuration
@@ -129,7 +124,7 @@ begin
 
 	    if R_t_fifo_sync(1) /= R_t_fifo_sync(0)
 	      or R_t_frame_done_sync(0) = '1' then
-		R_fifo_tail_cdc <= R_fifo_tail(10 downto 4);
+		R_fifo_tail_cdc <= R_fifo_tail(8 downto 4);
 	    end if;
 
 	    if R_t_frame_done_sync(0) = '1' then
@@ -140,7 +135,7 @@ begin
 		    R_t_framecnt <= R_t_framecnt + 1;
 		end if;
 	    elsif R_t_frame_done_sync(0) = '0' and
-	      R_fifo_tail_cdc /= R_fifo_head(10 downto 4) + 1 then
+	      R_fifo_tail_cdc /= R_fifo_head(8 downto 4) + 1 then
 		R_fifo_head <= R_fifo_head + 1;
 		R_t_hpos <= R_t_hpos + 1;
 		if R_t_hpos + 1 = R_hdisp then
@@ -184,10 +179,7 @@ begin
 		end if;
 	    end if;
 
-	    wa := conv_integer(R_fifo_head);
-	    M_fifo(wa)(C_bpp * 3 - 1 downto C_bpp * 2) <= r(7 downto 8 - C_bpp);
-	    M_fifo(wa)(C_bpp * 2 - 1 downto C_bpp) <= g(7 downto 8 - C_bpp);
-	    M_fifo(wa)(C_bpp - 1 downto 0) <= b(7 downto 8 - C_bpp);
+	    M_fifo(conv_integer(R_fifo_head)) <= r & g & b;
 	end if;
     end process;
 
@@ -213,7 +205,6 @@ begin
     );
 
     process(pixclk)
-	variable ra: natural;
     begin
 	if rising_edge(pixclk) then
 	    -- from line buffer and dv_syncgen to vga2dvid
@@ -225,35 +216,10 @@ begin
 	    elsif dv_active = '1' then
 		R_fifo_tail <= R_fifo_tail + 1;
 	    end if;
-	    ra := conv_integer(R_fifo_tail);
-	    R_r_mem <= M_fifo(ra)(C_bpp * 3 - 1 downto C_bpp * 2);
-	    R_g_mem <= M_fifo(ra)(C_bpp * 2 - 1 downto C_bpp);
-	    R_b_mem <= M_fifo(ra)(C_bpp - 1 downto 0);
-	    R_r(7 downto 8 - C_bpp) <= R_r_mem;
-	    R_g(7 downto 8 - C_bpp) <= R_g_mem;
-	    R_b(7 downto 8 - C_bpp) <= R_b_mem;
-	    case C_bpp is
-	    when 7 | 6 | 5 | 4 =>
-		R_r(7 - C_bpp downto 0) <=
-		  R_r_mem(C_bpp - 1 downto C_bpp * 2 - 8);
-		R_g(7 - C_bpp downto 0) <=
-		  R_g_mem(C_bpp - 1 downto C_bpp * 2 - 8);
-		R_b(7 - C_bpp downto 0) <=
-		  R_b_mem(C_bpp - 1 downto C_bpp * 2 - 8);
-	    when 3 =>
-		R_r(4 downto 0) <= R_r_mem & R_r_mem(2 downto 1);
-		R_g(4 downto 0) <= R_g_mem & R_g_mem(2 downto 1);
-		R_b(4 downto 0) <= R_b_mem & R_b_mem(2 downto 1);
-	    when 2 =>
-		R_r(3 downto 0) <= R_r_mem(1 downto 0) & R_r_mem(1 downto 0);
-		R_g(3 downto 0) <= R_g_mem(1 downto 0) & R_g_mem(1 downto 0);
-		R_b(3 downto 0) <= R_b_mem(1 downto 0) & R_b_mem(1 downto 0);
-	    when 1 =>
-		R_r <= (others => R_r_mem(0));
-		R_g <= (others => R_g_mem(0));
-		R_b <= (others => R_b_mem(0));
-	    when others =>
-	    end case;
+	    R_from_fifo <= M_fifo(conv_integer(R_fifo_tail));
+	    R_r <= R_from_fifo(23 downto 16);
+	    R_g <= R_from_fifo(15 downto 8);
+	    R_b <= R_from_fifo(7 downto 0);
 	end if;
     end process;
 
