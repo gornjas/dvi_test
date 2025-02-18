@@ -104,7 +104,6 @@ architecture x of dvi_test is
 begin
     -- Test picture generator
     process(clk)
-	variable fifo_head_next: std_logic_vector(10 downto 0);
 	variable tsum1, tsum2: std_logic_vector(11 downto 0);
 	variable r, g, b: std_logic_vector(7 downto 0);
 	variable wa: natural;
@@ -128,19 +127,21 @@ begin
 	    R_t_frame_done_sync <=
 	      dv_frame_done & R_t_frame_done_sync(2 downto 1);
 
-	    if R_t_fifo_sync(1) /= R_t_fifo_sync(0) then
+	    if R_t_fifo_sync(1) /= R_t_fifo_sync(0)
+	      or R_t_frame_done_sync(0) = '1' then
 		R_fifo_tail_cdc <= R_fifo_tail(10 downto 4);
 	    end if;
 
-	    fifo_head_next := R_fifo_head + 1;
-	    if R_t_frame_done_sync(1 downto 0) = "10" then
+	    if R_t_frame_done_sync(0) = '1' then
 		R_fifo_head <= (others => '0');
 		R_t_hpos <= (others => '0');
 		R_t_vpos <= (others => '0');
-		R_t_framecnt <= R_t_framecnt + 1;
+		if R_t_frame_done_sync(1) = '0' then
+		    R_t_framecnt <= R_t_framecnt + 1;
+		end if;
 	    elsif R_t_frame_done_sync(0) = '0' and
-	      R_fifo_tail_cdc /= fifo_head_next(10 downto 4) then
-		R_fifo_head <= fifo_head_next;
+	      R_fifo_tail_cdc /= R_fifo_head(10 downto 4) + 1 then
+		R_fifo_head <= R_fifo_head + 1;
 		R_t_hpos <= R_t_hpos + 1;
 		if R_t_hpos + 1 = R_hdisp then
 		    R_t_hpos <= (others => '0');
