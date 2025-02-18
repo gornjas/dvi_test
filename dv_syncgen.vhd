@@ -19,8 +19,9 @@ entity dv_syncgen is
 	-- outputs: sync signals
 	hsync: out std_logic;
 	vsync: out std_logic;
+	active: out std_logic;
 	frame: out std_logic;
-	active: out std_logic
+	frame_done: out std_logic
     );
 end dv_syncgen;
 
@@ -48,6 +49,7 @@ architecture x of dv_syncgen is
     signal R_vsync: std_logic := '0';
     signal R_active: std_logic := '0';
     signal R_frame: std_logic := '0';
+    signal R_frame_done: std_logic := '0';
 
 begin
     process(pixclk)
@@ -102,6 +104,7 @@ begin
 		    case R_vstate is
 		    when "00" =>
 			R_frame <= R_interlace and not R_frame;
+			R_frame_done <= not R_interlace or R_frame;
 		    when "01" =>
 			if R_frame = '0' then
 			    R_vsync <= '1';
@@ -114,6 +117,7 @@ begin
 			else
 			    R_vsync_delay <= '0' & R_htotal(11 downto 1);
 			end if;
+			R_frame_done <= '0';
 		    when "11" =>
 			R_vbound <=
 			    R_vtotal & R_vsyncend & R_vsyncstart & R_vdisp;
@@ -141,6 +145,7 @@ begin
 
     hsync <= R_hsync;
     vsync <= R_vsync;
-    frame <= R_frame;
     active <= R_active;
+    frame <= R_frame;
+    frame_done <= R_frame_done;
 end x;

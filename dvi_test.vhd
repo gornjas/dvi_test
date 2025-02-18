@@ -73,12 +73,12 @@ architecture x of dvi_test is
 
     -- pixclk domain, wires
     signal dv_vsync, dv_hsync, dv_frame, dv_active: std_logic;
+    signal dv_frame_done: std_logic;
 
     -- pixclk -> clk clock domain crossing synchronizers
-    signal R_t_hsync_sync, R_t_vsync_sync: std_logic_vector(2 downto 0);
-    signal R_t_active_sync, R_t_frame_sync: std_logic_vector(2 downto 0);
-    signal R_t_interlace_sync: std_logic_vector(2 downto 0);
     signal R_t_fifo_sync: std_logic_vector(2 downto 0);
+    signal R_t_frame_sync: std_logic_vector(2 downto 0);
+    signal R_t_frame_done_sync: std_logic_vector(2 downto 0);
 
     -- main clk domain, fifo clk -> pixclk clock domain
     signal R_fifo_tail_cdc: std_logic_vector(10 downto 4);
@@ -124,22 +124,35 @@ begin
 
 	    -- clock-domain crossing synchronizers (from pixclk)
 	    R_t_fifo_sync <= R_fifo_tail(4) & R_t_fifo_sync(2 downto 1);
+	    R_t_frame_sync <= dv_frame & R_t_frame_sync(2 downto 1);
+	    R_t_frame_done_sync <=
+	      dv_frame_done & R_t_frame_done_sync(2 downto 1);
 
 	    if R_t_fifo_sync(1) /= R_t_fifo_sync(0) then
 		R_fifo_tail_cdc <= R_fifo_tail(10 downto 4);
 	    end if;
 
 	    fifo_head_next := R_fifo_head + 1;
-	    if R_fifo_tail_cdc /= fifo_head_next(10 downto 4) then
+	    if R_t_frame_done_sync(1 downto 0) = "10" then
+		R_fifo_head <= (others => '0');
+		R_t_hpos <= (others => '0');
+		R_t_vpos <= (others => '0');
+		R_t_framecnt <= R_t_framecnt + 1;
+	    elsif R_t_frame_done_sync(0) = '0' and
+	      R_fifo_tail_cdc /= fifo_head_next(10 downto 4) then
 		R_fifo_head <= fifo_head_next;
 		R_t_hpos <= R_t_hpos + 1;
-		if R_t_hpos = R_hdisp then
-		    R_t_hpos <= conv_std_logic_vector(1, 12);
+		if R_t_hpos + 1 = R_hdisp then
+		    R_t_hpos <= (others => '0');
 		    R_t_vpos <= R_t_vpos + 1;
-		    if R_t_vpos = R_vdisp then
-			R_t_vpos <= conv_std_logic_vector(1, 12);
+		    if R_interlace = '1' then
+			R_t_vpos <= R_t_vpos + 2;
 		    end if;
 		end if;
+	    end if;
+
+	    if R_t_frame_sync(1 downto 0) = "01" then
+		R_t_hpos <= conv_std_logic_vector(2, 12);
 	    end if;
 
 	    tsum1 := R_t_hpos + R_t_vpos + R_t_framecnt;
@@ -193,8 +206,9 @@ begin
 	-- outputs
 	hsync => dv_hsync,
 	vsync => dv_vsync,
+	active => dv_active,
 	frame => dv_frame,
-	active => dv_active
+	frame_done => dv_frame_done
     );
 
     process(pixclk)
@@ -205,7 +219,9 @@ begin
 	    R_blank <= not dv_active;
 	    R_hsync <= dv_hsync;
 	    R_vsync <= dv_vsync;
-	    if dv_active = '1' then
+	    if dv_frame_done = '1' then
+		R_fifo_tail <= (others => '0');
+	    elsif dv_active = '1' then
 		R_fifo_tail <= R_fifo_tail + 1;
 	    end if;
 	    ra := conv_integer(R_fifo_tail);
