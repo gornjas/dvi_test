@@ -20,7 +20,7 @@ architecture x of top_dvi_test is
     signal dv_crgb: std_logic_vector(7 downto 0);
     signal ddr_d: std_logic_vector(3 downto 0);
 
-    signal R_cnt: std_logic_vector(31 downto 0);
+    signal R_cnt: std_logic_vector(32 downto 0);
     signal mode: std_logic_vector(3 downto 0);
 
 begin
@@ -28,7 +28,7 @@ begin
       else R_cnt + 1 when rising_edge(clk) and btn_down = '0';
     mode <= x"1" when btn_left = '1'
       else x"3" when btn_right = '1'
-      else '0' & R_cnt(31 downto 29);
+      else '0' & R_cnt(32 downto 30);
     led(3 downto 0) <= mode;
 
     I_pll: entity work.pll_25m
