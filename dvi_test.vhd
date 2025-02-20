@@ -68,12 +68,11 @@ architecture x of dvi_test is
     signal R_hsync, R_vsync, R_blank: std_logic;
 
     -- pixclk domain, wires
-    signal dv_vsync, dv_hsync, dv_frame, dv_active: std_logic;
-    signal dv_frame_gap: std_logic;
+    signal dv_vsync, dv_hsync, dv_active, dv_field, dv_frame_gap: std_logic;
 
     -- pixclk -> clk clock domain crossing synchronizers
     signal R_t_fifo_sync: std_logic_vector(2 downto 0);
-    signal R_t_frame_sync: std_logic_vector(2 downto 0);
+    signal R_t_field_sync: std_logic_vector(2 downto 0);
     signal R_t_frame_gap_sync: std_logic_vector(2 downto 0);
 
     -- main clk domain, fifo clk -> pixclk clock domain
@@ -118,7 +117,7 @@ begin
 
 	    -- clock-domain crossing synchronizers (from pixclk)
 	    R_t_fifo_sync <= R_fifo_tail(4) & R_t_fifo_sync(2 downto 1);
-	    R_t_frame_sync <= dv_frame & R_t_frame_sync(2 downto 1);
+	    R_t_field_sync <= dv_field & R_t_field_sync(2 downto 1);
 	    R_t_frame_gap_sync <= dv_frame_gap & R_t_frame_gap_sync(2 downto 1);
 
 	    if R_t_fifo_sync(1) /= R_t_fifo_sync(0)
@@ -146,7 +145,7 @@ begin
 		end if;
 	    end if;
 
-	    if R_t_frame_sync(1 downto 0) = "10" then
+	    if R_t_field_sync(1 downto 0) = "10" then
 		R_t_vpos <= conv_std_logic_vector(1, 12);
 	    end if;
 
@@ -199,7 +198,7 @@ begin
 	hsync => dv_hsync,
 	vsync => dv_vsync,
 	active => dv_active,
-	frame => dv_frame,
+	field => dv_field,
 	frame_gap => dv_frame_gap
     );
 

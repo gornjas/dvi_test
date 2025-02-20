@@ -20,7 +20,7 @@ entity dv_syncgen is
 	hsync: out std_logic;
 	vsync: out std_logic;
 	active: out std_logic;
-	frame: out std_logic;
+	field: out std_logic;
 	frame_gap: out std_logic
     );
 end dv_syncgen;
@@ -48,7 +48,7 @@ architecture x of dv_syncgen is
     signal R_hsync: std_logic := '0';
     signal R_vsync: std_logic := '0';
     signal R_active: std_logic := '0';
-    signal R_frame: std_logic := '0';
+    signal R_field: std_logic := '0';
     signal R_frame_gap: std_logic := '0';
 
 begin
@@ -103,16 +103,16 @@ begin
 		    R_vbound(32 downto 0) <= R_vbound(43 downto 11);
 		    case R_vstate is
 		    when "00" =>
-			R_frame <= R_interlace and not R_frame;
-			R_frame_gap <= not R_interlace or R_frame;
+			R_field <= R_interlace and not R_field;
+			R_frame_gap <= not R_interlace or R_field;
 		    when "01" =>
-			if R_frame = '0' then
+			if R_field = '0' then
 			    R_vsync <= '1';
 			else
 			    R_vsync_delay <= '0' & R_htotal(11 downto 1);
 			end if;
 		    when "10" =>
-			if R_frame = '0' then
+			if R_field = '0' then
 			    R_vsync <= '0';
 			else
 			    R_vsync_delay <= '0' & R_htotal(11 downto 1);
@@ -122,13 +122,13 @@ begin
 			    R_vtotal & R_vsyncend & R_vsyncstart & R_vdisp;
 			R_vpos <= conv_std_logic_vector(1, 11);
 			if R_interlace = '1' then
-			    if R_frame = '0' then
+			    if R_field = '0' then
 				R_vpos <= conv_std_logic_vector(2, 11);
 			    elsif R_vtotal(0) = '1' then
 				R_skip_line <= true;
 			    end if;
 			end if;
-			if R_interlace = '0' or R_frame = '0' then
+			if R_interlace = '0' or R_field = '0' then
 			    R_frame_gap <= '0';
 			end if;
 		    when others =>
@@ -148,6 +148,6 @@ begin
     hsync <= R_hsync;
     vsync <= R_vsync;
     active <= R_active;
-    frame <= R_frame;
+    field <= R_field;
     frame_gap <= R_frame_gap;
 end x;
