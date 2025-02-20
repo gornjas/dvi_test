@@ -72,7 +72,6 @@ architecture x of dvi_test is
 
     -- pixclk -> clk clock domain crossing synchronizers
     signal R_t_fifo_sync: std_logic_vector(2 downto 0);
-    signal R_t_field_sync: std_logic_vector(2 downto 0);
     signal R_t_frame_gap_sync: std_logic_vector(2 downto 0);
 
     -- main clk domain, fifo clk -> pixclk clock domain
@@ -117,7 +116,6 @@ begin
 
 	    -- clock-domain crossing synchronizers (from pixclk)
 	    R_t_fifo_sync <= R_fifo_tail(4) & R_t_fifo_sync(2 downto 1);
-	    R_t_field_sync <= dv_field & R_t_field_sync(2 downto 1);
 	    R_t_frame_gap_sync <= dv_frame_gap & R_t_frame_gap_sync(2 downto 1);
 
 	    if R_t_fifo_sync(1) /= R_t_fifo_sync(0)
@@ -138,15 +136,15 @@ begin
 		R_t_hpos <= R_t_hpos + 1;
 		if R_t_hpos + 1 = R_hdisp then
 		    R_t_hpos <= (others => '0');
-		    R_t_vpos <= R_t_vpos + 1;
 		    if R_interlace = '1' then
 			R_t_vpos <= R_t_vpos + 2;
+			if R_t_vpos(10 downto 1) = R_vdisp(10 downto 1) - 1 then
+			    R_t_vpos <= x"001";
+			end if;
+		    else
+			R_t_vpos <= R_t_vpos + 1;
 		    end if;
 		end if;
-	    end if;
-
-	    if R_t_field_sync(1 downto 0) = "10" then
-		R_t_vpos <= conv_std_logic_vector(1, 12);
 	    end if;
 
 	    tsum1 := R_t_hpos + R_t_vpos + R_t_framecnt;
