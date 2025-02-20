@@ -6,6 +6,7 @@ use ieee.std_logic_unsigned.all;
 entity dv_syncgen is
     port (
 	pixclk: in std_logic;
+	res: in std_logic := '0';
 	-- inputs: video mode configuration
 	hdisp: in std_logic_vector(11 downto 0);
 	hsyncstart: in std_logic_vector(11 downto 0);
@@ -56,7 +57,7 @@ architecture x of dv_syncgen is
     signal R_frame_gap: std_logic;
 
 begin
-    process(pixclk)
+    process(pixclk, res)
 	variable hsync: boolean;
     begin
 	if rising_edge(pixclk) then
@@ -70,7 +71,7 @@ begin
 	    R_vsyncend <= vsyncend;
 	    R_vtotal <= vtotal;
 	    R_hsyncn <= hsyncn;
-	    R_vsyncn <= hsyncn;
+	    R_vsyncn <= vsyncn;
 	    R_interlace <= interlace;
 
 	    R_hpos <= R_hpos + 1;
@@ -87,10 +88,10 @@ begin
 		when "00" =>
 		    R_active <= '0';
 		when "01" =>
-		    R_hsync <= not R_hsyncn; -- 1
+		    R_hsync <= not R_hsyncn;
 		    hsync := true;
 		when "10" =>
-		    R_hsync <= R_hsyncn; -- 0
+		    R_hsync <= R_hsyncn;
 		when others => -- "11"
 		    if R_vstate = "00" and not R_skip_line then
 			R_active <= '1';
@@ -98,7 +99,7 @@ begin
 		    R_skip_line <= false;
 		end case;
 	    end if;
-	    if hsync then
+	    if res = '1' or hsync then
 		R_vpos <= R_vpos + 1;
 		if R_interlace = '1' then
 		    R_vpos <= R_vpos + 2;
@@ -113,13 +114,13 @@ begin
 			R_frame_gap <= not R_interlace or R_field;
 		    when "01" =>
 			if R_field = '0' then
-			    R_vsync <= not R_vsyncn; -- 1
+			    R_vsync <= not R_vsyncn;
 			else
 			    R_vsync_delay <= '0' & R_htotal(11 downto 1);
 			end if;
 		    when "10" =>
 			if R_field = '0' then
-			    R_vsync <= R_vsyncn; -- 0
+			    R_vsync <= R_vsyncn;
 			else
 			    R_vsync_delay <= '0' & R_htotal(11 downto 1);
 			end if;
@@ -149,6 +150,20 @@ begin
 		end if;
 	    end if;
 	end if;
+
+	    if res = '1' then
+		R_hstate <= "00";
+		R_hsync <= R_hsyncn;
+		R_hbound <= R_htotal & R_hsyncend & R_hsyncstart & R_hdisp;
+		R_hpos <= conv_std_logic_vector(1, 12);
+		R_vstate <= "00";
+		R_vsync <= R_vsyncn;
+		R_vbound <= R_vtotal & R_vsyncend & R_vsyncstart & R_vdisp;
+		R_vpos <= conv_std_logic_vector(1, 11);
+		R_vsync_delay <= (others => '1');
+		R_frame_gap <= '1';
+		R_field <= '0';
+	    end if;
     end process;
 
     hsync <= R_hsync;
