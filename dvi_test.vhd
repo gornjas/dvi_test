@@ -40,7 +40,7 @@ architecture x of dvi_test is
 	    74250, 1280, 1720, 1760, 1980, 720, 725, 730, 750, 0, 0, 0
 	),
 	( -- 3: 1920x1080i @ 50 Hz, 16:9
-	    74250, 1920, 2448, 2492, 2640, 1080, 1084, 1094, 1125, 0, 0, 1
+	    74250, 1920, 2448, 2492, 2640, 1080, 1084, 1094, 1125, 0, 1, 1
 	),
 	( -- 4: 1920x1080p @ 30 Hz, 16:9
 	    74250, 1920, 2008, 2052, 2200, 1080, 1084, 1089, 1125, 0, 0, 0
@@ -93,6 +93,8 @@ architecture x of dvi_test is
     signal R_vsyncstart: std_logic_vector(10 downto 0);
     signal R_vsyncend: std_logic_vector(10 downto 0);
     signal R_vtotal: std_logic_vector(10 downto 0);
+    signal R_hsyncn: std_logic;
+    signal R_vsyncn: std_logic;
     signal R_interlace: std_logic;
 
 begin
@@ -112,6 +114,8 @@ begin
 	    R_vsyncstart <= conv_std_logic_vector(C_ml(R_mode).vsyncstart, 11);
 	    R_vsyncend <= conv_std_logic_vector(C_ml(R_mode).vsyncend, 11);
 	    R_vtotal <= conv_std_logic_vector(C_ml(R_mode).vtotal, 11);
+	    R_hsyncn <= conv_std_logic_vector(C_ml(R_mode).hsyncn, 1)(0);
+	    R_vsyncn <= conv_std_logic_vector(C_ml(R_mode).vsyncn, 1)(0);
 	    R_interlace <= conv_std_logic_vector(C_ml(R_mode).interlace, 1)(0);
 
 	    -- clock-domain crossing synchronizers (from pixclk)
@@ -138,7 +142,8 @@ begin
 		    R_t_hpos <= (others => '0');
 		    if R_interlace = '1' then
 			R_t_vpos <= R_t_vpos + 2;
-			if R_t_vpos(10 downto 1) = R_vdisp(10 downto 1) - 1 then
+			if R_t_vpos(10 downto 1) = R_vdisp(10 downto 1) - 1
+			  and R_t_vpos(0) = '0' then
 			    R_t_vpos <= x"001";
 			end if;
 		    else
@@ -191,6 +196,8 @@ begin
 	vsyncstart => R_vsyncstart,
 	vsyncend => R_vsyncend,
 	vtotal => R_vtotal,
+	hsyncn => R_hsyncn,
+	vsyncn => R_vsyncn,
 	interlace => R_interlace,
 	-- outputs
 	hsync => dv_hsync,

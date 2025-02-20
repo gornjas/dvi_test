@@ -15,6 +15,8 @@ entity dv_syncgen is
 	vsyncstart: in std_logic_vector(10 downto 0);
 	vsyncend: in std_logic_vector(10 downto 0);
 	vtotal: in std_logic_vector(10 downto 0);
+	hsyncn: in std_logic;
+	vsyncn: in std_logic;
 	interlace: in std_logic;
 	-- outputs: sync signals
 	hsync: out std_logic;
@@ -35,21 +37,23 @@ architecture x of dv_syncgen is
     signal R_vsyncstart: std_logic_vector(10 downto 0);
     signal R_vsyncend: std_logic_vector(10 downto 0);
     signal R_vtotal: std_logic_vector(10 downto 0);
+    signal R_hsyncn: std_logic;
+    signal R_vsyncn: std_logic;
     signal R_interlace: std_logic;
 
-    signal R_hstate: std_logic_vector(1 downto 0) := (others => '0');
-    signal R_vstate: std_logic_vector(1 downto 0) := (others => '0');
-    signal R_hpos: std_logic_vector(11 downto 0) := (others => '0');
-    signal R_vpos: std_logic_vector(10 downto 0) := (others => '0');
-    signal R_hbound: std_logic_vector(47 downto 0) := (others => '0');
-    signal R_vbound: std_logic_vector(43 downto 0) := (others => '0');
-    signal R_vsync_delay: std_logic_vector(11 downto 0) := (others => '0');
-    signal R_skip_line: boolean := false;
-    signal R_hsync: std_logic := '0';
-    signal R_vsync: std_logic := '0';
-    signal R_active: std_logic := '0';
-    signal R_field: std_logic := '0';
-    signal R_frame_gap: std_logic := '0';
+    signal R_hstate: std_logic_vector(1 downto 0);
+    signal R_vstate: std_logic_vector(1 downto 0);
+    signal R_hpos: std_logic_vector(11 downto 0);
+    signal R_vpos: std_logic_vector(10 downto 0);
+    signal R_hbound: std_logic_vector(47 downto 0);
+    signal R_vbound: std_logic_vector(43 downto 0);
+    signal R_vsync_delay: std_logic_vector(11 downto 0);
+    signal R_skip_line: boolean;
+    signal R_hsync: std_logic;
+    signal R_vsync: std_logic;
+    signal R_active: std_logic;
+    signal R_field: std_logic;
+    signal R_frame_gap: std_logic;
 
 begin
     process(pixclk)
@@ -65,6 +69,8 @@ begin
 	    R_vsyncstart <= vsyncstart;
 	    R_vsyncend <= vsyncend;
 	    R_vtotal <= vtotal;
+	    R_hsyncn <= hsyncn;
+	    R_vsyncn <= hsyncn;
 	    R_interlace <= interlace;
 
 	    R_hpos <= R_hpos + 1;
@@ -81,10 +87,10 @@ begin
 		when "00" =>
 		    R_active <= '0';
 		when "01" =>
-		    R_hsync <= '1';
+		    R_hsync <= not R_hsyncn; -- 1
 		    hsync := true;
 		when "10" =>
-		    R_hsync <= '0';
+		    R_hsync <= R_hsyncn; -- 0
 		when others => -- "11"
 		    if R_vstate = "00" and not R_skip_line then
 			R_active <= '1';
@@ -107,13 +113,13 @@ begin
 			R_frame_gap <= not R_interlace or R_field;
 		    when "01" =>
 			if R_field = '0' then
-			    R_vsync <= '1';
+			    R_vsync <= not R_vsyncn; -- 1
 			else
 			    R_vsync_delay <= '0' & R_htotal(11 downto 1);
 			end if;
 		    when "10" =>
 			if R_field = '0' then
-			    R_vsync <= '0';
+			    R_vsync <= R_vsyncn; -- 0
 			else
 			    R_vsync_delay <= '0' & R_htotal(11 downto 1);
 			end if;
