@@ -20,11 +20,17 @@ architecture x of top_dvi_test is
     signal dv_crgb: std_logic_vector(7 downto 0);
     signal ddr_d: std_logic_vector(3 downto 0);
 
-    signal R_mode: std_logic_vector(3 downto 0);
-    signal R_key_sync, R_key_last: std_logic_vector(1 downto 0);
-    signal R_debounce_cnt: integer;
+    signal R_cnt: std_logic_vector(31 downto 0);
+    signal mode: std_logic_vector(3 downto 0);
 
 begin
+    R_cnt <= (others => '0') when btn_up = '1'
+      else R_cnt + 1 when rising_edge(clk) and btn_down = '0';
+    mode <= x"1" when btn_left = '1'
+      else x"3" when btn_right = '1'
+      else '0' & R_cnt(31 downto 29);
+    led(3 downto 0) <= mode;
+
     I_pll: entity work.pll_25m
     port map(
 	clk_25m => clk_25m,
@@ -38,7 +44,7 @@ begin
 	clk => clk,
 	pixclk => pixclk,
 	pixclk_x5 => pixclk_x5,
-	mode => R_mode,
+	mode => mode,
 	dv_clk => dv_crgb(7 downto 6),
 	dv_r => dv_crgb(5 downto 4),
 	dv_g => dv_crgb(3 downto 2),
@@ -54,28 +60,4 @@ begin
 	q => gpdi_dp(i)
     );
     end generate;
-
-    process(clk)
-    begin
-	if rising_edge(clk) then
-	    -- mode select
-	    R_key_sync <= btn_up & btn_down;
-	    if R_key_last /= R_key_sync then
-		R_debounce_cnt <= R_debounce_cnt - 1;
-		if R_debounce_cnt < 0 then
-		    R_key_last <= R_key_sync;
-		    if R_key_sync(1) = '1' then
-			R_mode(2 downto 0) <= R_mode(2 downto 0) + 1;
-		    end if;
-		    if R_key_sync(0) = '1' then
-			R_mode(2 downto 0) <= R_mode(2 downto 0) - 1;
-		    end if;
-		end if;
-	    else
-		R_debounce_cnt <= 1500000;
-	    end if;
-	end if;
-    end process;
-
-    led(3 downto 0) <= R_mode;
 end x;
