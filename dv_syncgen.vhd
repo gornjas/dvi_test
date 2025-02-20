@@ -151,19 +151,19 @@ begin
 	    end if;
 	end if;
 
-	    if res = '1' then
-		R_hstate <= "00";
-		R_hsync <= R_hsyncn;
-		R_hbound <= R_htotal & R_hsyncend & R_hsyncstart & R_hdisp;
-		R_hpos <= conv_std_logic_vector(1, 12);
-		R_vstate <= "00";
-		R_vsync <= R_vsyncn;
-		R_vbound <= R_vtotal & R_vsyncend & R_vsyncstart & R_vdisp;
-		R_vpos <= conv_std_logic_vector(1, 11);
-		R_vsync_delay <= (others => '1');
-		R_frame_gap <= '1';
-		R_field <= '0';
-	    end if;
+	if res = '1' then
+	    R_hstate <= "00";
+	    R_hsync <= R_hsyncn;
+	    R_hbound <= R_htotal & R_hsyncend & R_hsyncstart & R_hdisp;
+	    R_hpos <= conv_std_logic_vector(1, 12);
+	    R_vstate <= "00";
+	    R_vsync <= R_vsyncn;
+	    R_vbound <= R_vtotal & R_vsyncend & R_vsyncstart & R_vdisp;
+	    R_vpos <= conv_std_logic_vector(1, 11);
+	    R_vsync_delay <= (others => '1');
+	    R_frame_gap <= '1';
+	    R_field <= '0';
+	end if;
     end process;
 
     hsync <= R_hsync;
