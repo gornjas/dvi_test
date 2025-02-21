@@ -18,7 +18,6 @@ architecture x of top_dvi_test is
     signal clk, pixclk, pixclk_x5: std_logic;
 
     signal dv_crgb: std_logic_vector(7 downto 0);
-    signal ddr_d: std_logic_vector(3 downto 0);
 
     signal R_cnt: std_logic_vector(32 downto 0);
     signal mode: std_logic_vector(3 downto 0);
