@@ -6,6 +6,7 @@ use ieee.std_logic_unsigned.all;
 entity dvi_test is
     port (
 	clk, pixclk, pixclk_x5: in std_logic;
+	res: in std_logic := '0';
 	mode: in std_logic_vector(3 downto 0);
 	dv_clk, dv_r, dv_g, dv_b: out std_logic_vector(1 downto 0)
     );
@@ -80,8 +81,8 @@ architecture x of dvi_test is
 
     -- main clk domain, test picture generator
     signal R_t_hpos, R_t_vpos: std_logic_vector(11 downto 0);
+    signal R_t_frame_done: boolean;
     signal R_t_framecnt: std_logic_vector(9 downto 0);
-    signal R_t_active: boolean;
 
     -- clk domain, (mostly) static linemode configuration data
     signal R_mode: natural;
@@ -131,23 +132,29 @@ begin
 		R_fifo_head <= (others => '0');
 		R_t_hpos <= (others => '0');
 		R_t_vpos <= (others => '0');
-		if R_t_frame_gap_sync(1) = '0' then
+		R_t_frame_done <= false;
+		if R_t_frame_done then
 		    R_t_framecnt <= R_t_framecnt + 1;
 		end if;
-	    elsif R_t_frame_gap_sync(0) = '0' and
+	    elsif not R_t_frame_done and
 	      R_fifo_tail_cdc /= R_fifo_head(8 downto 4) + 1 then
-		R_fifo_head <= R_fifo_head + 1;
+		if not R_t_frame_done then
+		    R_fifo_head <= R_fifo_head + 1;
+		end if;
 		R_t_hpos <= R_t_hpos + 1;
 		if R_t_hpos + 1 = R_hdisp then
 		    R_t_hpos <= (others => '0');
-		    if R_interlace = '1' then
-			R_t_vpos <= R_t_vpos + 2;
-			if R_t_vpos(10 downto 1) = R_vdisp(10 downto 1) - 1
-			  and R_t_vpos(0) = '0' then
+		    if R_t_vpos(10 downto 1) = R_vdisp(10 downto 1) - 1 then
+			R_t_frame_done <= true;
+			if R_interlace = '1' and R_t_vpos(0) = '0' then
 			    R_t_vpos <= x"001";
+			    R_t_frame_done <= false;
 			end if;
 		    else
 			R_t_vpos <= R_t_vpos + 1;
+			if R_interlace = '1' then
+			    R_t_vpos <= R_t_vpos + 2;
+			end if;
 		    end if;
 		end if;
 	    end if;
@@ -187,6 +194,7 @@ begin
     I_syncgen: entity work.dv_syncgen
     port map (
 	pixclk => pixclk,
+	res => res,
 	-- mode config
 	hdisp => R_hdisp,
 	hsyncstart => R_hsyncstart,
