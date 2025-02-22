@@ -16,8 +16,8 @@ entity dvi_fb is
 	bus_in: in std_logic_vector(31 downto 0);
 	bus_out: out std_logic_vector(31 downto 0);
 	-- DMA master: todo
-	dma_req: sdram_req_type;
-	dma_resp: sdram_resp_type;
+	dma_req: out sdram_req_type;
+	dma_resp: in sdram_resp_type;
 	-- Digital video
 	pixclk, pixclk_x5: in std_logic;
 	dv_clk, dv_r, dv_g, dv_b: out std_logic_vector(1 downto 0)
@@ -54,9 +54,12 @@ architecture x of dvi_fb is
     signal R_dma_fifo_head, R_dma_fifo_tail: std_logic_vector(3 downto 0);
     type T_dma_fifo is array (0 to 15) of std_logic_vector(31 downto 0);
     signal M_dma_fifo: T_dma_fifo;
+    signal R_pixel_index: std_logic_vector(1 downto 0);
 
     -- main clk domain, framebuffer, wires
     signal frame_gap: boolean;
+    signal pixel_fifo_needs_more_pixels: boolean;
+    signal dma_fifo_may_fetch, dma_fifo_has_data: boolean;
     signal dma_fifo_head_next, dma_fifo_tail_next: std_logic_vector(3 downto 0);
 
     -- main clk domain, (mostly) static linemode configuration data
@@ -74,25 +77,70 @@ architecture x of dvi_fb is
 
 begin
     frame_gap <= R_t_frame_gap_sync(0) = '1';
+    pixel_fifo_needs_more_pixels <=
+      R_pixel_fifo_tail_cdc /= R_pixel_fifo_head(8 downto 4) + 1;
+    dma_fifo_may_fetch <=
+      R_dma_fifo_head(3 downto 2) + 1 /= R_dma_fifo_tail(3 downto 2);
+    dma_fifo_has_data <= R_dma_fifo_head /= R_dma_fifo_tail;
+
+    dma_req.addr <= R_dma_cur;
+    dma_req.strobe <= '1' when dma_fifo_may_fetch else '0';
+    dma_req.burst_len <= x"03";
+    dma_req.write <= '0';
 
     process(clk)
+	variable pixel_ready: boolean;
+	variable from_dma_fifo: std_logic_vector(31 downto 0);
+	variable pixel: std_logic_vector(7 downto 0);
 	variable r, g, b: std_logic_vector(7 downto 0);
     begin
 	if rising_edge(clk) then
+	    pixel_ready := false;
+
 	    if frame_gap then
 		-- Pixel output has stopped, prepare for a new frame
 		R_dma_cur <= R_dma_base;
 		R_pixel_fifo_head <= (others => '0');
-	    elsif R_pixel_fifo_tail_cdc /= R_pixel_fifo_head(8 downto 4) +1 then
-		R_pixel_fifo_head <= R_pixel_fifo_head + 1;
-		R_dma_cur <= R_dma_cur + 1;
+		R_dma_fifo_head <= (others => '0');
+		R_dma_fifo_tail <= (others => '0');
+		R_pixel_index <= (others => '0');
+	    else
+		if dma_resp.data_ready = '1' then
+		    M_dma_fifo(conv_integer(R_dma_fifo_head)) <=
+		      dma_resp.data_out;
+		    R_dma_cur <= R_dma_cur + 1;
+		    R_dma_fifo_head <= R_dma_fifo_head + 1;
+		end if;
+
+		if dma_fifo_may_fetch then
+		end if;
+
+		if pixel_fifo_needs_more_pixels and dma_fifo_has_data then
+		    from_dma_fifo := M_dma_fifo(conv_integer(R_dma_fifo_tail));
+		    case R_pixel_index is
+		    when "00" => pixel := from_dma_fifo(7 downto 0);
+		    when "01" => pixel := from_dma_fifo(15 downto 8);
+		    when "10" => pixel := from_dma_fifo(23 downto 16);
+		    when others => pixel := from_dma_fifo(31 downto 24);
+		    end case;
+		    r :=  pixel(7 downto 6) & pixel(7 downto 6)
+		      & pixel(7 downto 6) & pixel(7 downto 6);
+		    g :=  pixel(5 downto 3) & pixel(5 downto 3)
+		      & pixel(5 downto 4);
+		    b := pixel(1 downto 0) & pixel(1 downto 0)
+		      & pixel(1 downto 0) & pixel(1 downto 0);
+		    pixel_ready := true;
+		    R_pixel_index <= R_pixel_index + 1;
+		    if R_pixel_index = "11" then
+			R_dma_fifo_tail <= R_dma_fifo_tail + 1;
+		    end if;
+		end if;
 	    end if;
 
-	    r := R_dma_cur(9 downto 2);
-	    g := R_dma_cur(15 downto 8);
-	    b := R_dma_cur(21 downto 14);
-
-	    M_pixel_fifo(conv_integer(R_pixel_fifo_head)) <= r & g & b;
+	    if pixel_fifo_needs_more_pixels and pixel_ready then
+		M_pixel_fifo(conv_integer(R_pixel_fifo_head)) <= r & g & b;
+		R_pixel_fifo_head <= R_pixel_fifo_head + 1;
+	    end if;
 
 	    -- pixclk -> clk clock-domain crossing synchronizers
 	    R_pixel_fifo_sync <=
@@ -145,6 +193,17 @@ begin
 	end if;
     end process;
 
+    -- CPU read mux
+    with bus_addr select bus_out <=
+	--x"0" & R_hsyncstart & x"0" & R_hdisp when x"0",
+	--x"0" & R_htotal & x"0" & R_hsyncend when x"1",
+	--x"0" & '0' & R_vsyncstart & x"0" & '0' & R_vdisp when x"2",
+	--R_interlace & R_vsyncn & R_hsyncn & "00"
+	--  & R_vtotal & x"0" & '0' & R_vsyncend when x"3",
+	R_dma_base & "00" when x"4",
+	R_dma_cur & "00" when x"5",
+	(others => '0') when others;
+
     I_syncgen: entity work.dv_syncgen
     port map (
 	pixclk => pixclk,
@@ -186,16 +245,6 @@ begin
 	    R_b <= R_from_pixel_fifo(7 downto 0);
 	end if;
     end process;
-
-    with bus_addr select bus_out <=
-	--x"0" & R_hsyncstart & x"0" & R_hdisp when x"0",
-	--x"0" & R_htotal & x"0" & R_hsyncend when x"1",
-	--x"0" & '0' & R_vsyncstart & x"0" & '0' & R_vdisp when x"2",
-	--R_interlace & R_vsyncn & R_hsyncn & "00"
-	--  & R_vtotal & x"0" & '0' & R_vsyncend when x"3",
-	R_dma_base & "00" when x"4",
-	R_dma_cur & "00" when x"5",
-	(others => '0') when others;
 
     I_dvid: entity work.vga2dvid
     generic map (
