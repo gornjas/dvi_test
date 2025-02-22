@@ -47,7 +47,7 @@ architecture x of dvi_fb is
     -- main clk domain, test picture generator
     signal R_t_hpos, R_t_vpos: std_logic_vector(11 downto 0);
     signal R_t_frame_done: boolean;
-    signal R_t_framecnt: std_logic_vector(9 downto 0);
+    signal R_t_framecnt: std_logic_vector(7 downto 0);
 
     -- clk domain, (mostly) static linemode configuration data
     signal R_hdisp: std_logic_vector(11 downto 0);
@@ -147,33 +147,9 @@ begin
 		end if;
 	    end if;
 
-	    tsum1 := R_t_hpos + R_t_vpos + R_t_framecnt;
-	    tsum2 := R_t_hpos - R_t_vpos + 1;
-
 	    r := R_t_hpos(7 downto 0);
 	    g := R_t_vpos(7 downto 0);
-	    b := tsum1(9 downto 2);
-
-	    if tsum2(7 downto 1) = 0 then
-		if R_t_framecnt(6) = '0' then
-		    r := R_t_framecnt(5 downto 0) & "00";
-		    g := R_t_framecnt(5 downto 0) & "00";
-		    b := R_t_framecnt(5 downto 0) & "00";
-		else
-		    r := x"fc" xor (R_t_framecnt(5 downto 0) & "00");
-		    g := x"fc" xor (R_t_framecnt(5 downto 0) & "00");
-		    b := x"fc" xor (R_t_framecnt(5 downto 0) & "00");
-		end if;
-		if R_t_framecnt(9) = '0' then
-		    r := x"00";
-		end if;
-		if R_t_framecnt(8) = '0' then
-		    g := x"00";
-		end if;
-		if R_t_framecnt(7) = '0' then
-		    b := x"00";
-		end if;
-	    end if;
+	    b := R_t_framecnt;
 
 	    M_fifo(conv_integer(R_fifo_head)) <= r & g & b;
 	end if;
