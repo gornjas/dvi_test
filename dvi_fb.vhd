@@ -48,11 +48,18 @@ architecture x of dvi_fb is
     signal R_pixel_fifo_tail_cdc: std_logic_vector(8 downto 4);
     signal R_pixel_fifo_head: std_logic_vector(8 downto 0);
 
-    -- main clk domain, framebuffer
+    -- main clk domain, framebuffer, registers
     signal R_dma_base: std_logic_vector(31 downto 2);
     signal R_dma_cur: std_logic_vector(31 downto 2);
+    signal R_dma_fifo_head, R_dma_fifo_tail: std_logic_vector(3 downto 0);
+    type T_dma_fifo is array (0 to 15) of std_logic_vector(31 downto 0);
+    signal M_dma_fifo: T_dma_fifo;
 
-    -- clk domain, (mostly) static linemode configuration data
+    -- main clk domain, framebuffer, wires
+    signal frame_gap: boolean;
+    signal dma_fifo_head_next, dma_fifo_tail_next: std_logic_vector(3 downto 0);
+
+    -- main clk domain, (mostly) static linemode configuration data
     signal R_hdisp: std_logic_vector(11 downto 0);
     signal R_hsyncstart: std_logic_vector(11 downto 0);
     signal R_hsyncend: std_logic_vector(11 downto 0);
@@ -66,12 +73,36 @@ architecture x of dvi_fb is
     signal R_interlace: std_logic;
 
 begin
-    -- Test picture generator
+    frame_gap <= R_t_frame_gap_sync(0) = '1';
+
     process(clk)
-	variable tsum1, tsum2: std_logic_vector(11 downto 0);
 	variable r, g, b: std_logic_vector(7 downto 0);
     begin
 	if rising_edge(clk) then
+	    if frame_gap then
+		-- Pixel output has stopped, prepare for a new frame
+		R_dma_cur <= R_dma_base;
+		R_pixel_fifo_head <= (others => '0');
+	    elsif R_pixel_fifo_tail_cdc /= R_pixel_fifo_head(8 downto 4) +1 then
+		R_pixel_fifo_head <= R_pixel_fifo_head + 1;
+		R_dma_cur <= R_dma_cur + 1;
+	    end if;
+
+	    r := R_dma_cur(9 downto 2);
+	    g := R_dma_cur(15 downto 8);
+	    b := R_dma_cur(21 downto 14);
+
+	    M_pixel_fifo(conv_integer(R_pixel_fifo_head)) <= r & g & b;
+
+	    -- pixclk -> clk clock-domain crossing synchronizers
+	    R_pixel_fifo_sync <=
+	      R_pixel_fifo_tail(4) & R_pixel_fifo_sync(2 downto 1);
+	    R_t_frame_gap_sync <= dv_frame_gap & R_t_frame_gap_sync(2 downto 1);
+	    if R_pixel_fifo_sync(1) /= R_pixel_fifo_sync(0)
+	      or R_t_frame_gap_sync(0) = '1' then
+		R_pixel_fifo_tail_cdc <= R_pixel_fifo_tail(8 downto 4);
+	    end if;
+
 	    -- CPU interface: configuration registers
 	    if ce = '1' and bus_write = '1' then
 		case bus_addr is
@@ -111,30 +142,6 @@ begin
 		when others =>
 		end case;
 	    end if;
-
-	    -- clock-domain crossing synchronizers (from pixclk)
-	    R_pixel_fifo_sync <=
-	      R_pixel_fifo_tail(4) & R_pixel_fifo_sync(2 downto 1);
-	    R_t_frame_gap_sync <= dv_frame_gap & R_t_frame_gap_sync(2 downto 1);
-	    if R_pixel_fifo_sync(1) /= R_pixel_fifo_sync(0)
-	      or R_t_frame_gap_sync(0) = '1' then
-		R_pixel_fifo_tail_cdc <= R_pixel_fifo_tail(8 downto 4);
-	    end if;
-
-	    if R_t_frame_gap_sync(0) = '1' then
-		-- Idle
-		R_dma_cur <= R_dma_base;
-		R_pixel_fifo_head <= (others => '0');
-	    elsif R_pixel_fifo_tail_cdc /= R_pixel_fifo_head(8 downto 4) +1 then
-		R_pixel_fifo_head <= R_pixel_fifo_head + 1;
-		R_dma_cur <= R_dma_cur + 1;
-	    end if;
-
-	    r := R_dma_cur(9 downto 2);
-	    g := R_dma_cur(15 downto 8);
-	    b := R_dma_cur(21 downto 14);
-
-	    M_pixel_fifo(conv_integer(R_pixel_fifo_head)) <= r & g & b;
 	end if;
     end process;
 
