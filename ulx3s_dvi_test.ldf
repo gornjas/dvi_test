@@ -9,9 +9,6 @@
         <Source name="dvi_test.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
-        <Source name="pll_25_675_742.vhd" type="VHDL" type_short="VHDL">
-            <Options/>
-        </Source>
         <Source name="tmds_encoder.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
@@ -19,6 +16,9 @@
             <Options/>
         </Source>
         <Source name="dv_syncgen.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="pll_25_450_742.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
         <Source name="ulx3s_fer.lpf" type="Logic Preference" type_short="LPF">
