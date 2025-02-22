@@ -50,11 +50,14 @@ architecture x of dvi_fb is
 
     -- main clk domain, framebuffer, registers
     signal R_dma_base: std_logic_vector(31 downto 2);
+    signal R_dma_end: std_logic_vector(31 downto 2);
     signal R_dma_cur: std_logic_vector(31 downto 2);
     signal R_dma_fifo_head, R_dma_fifo_tail: std_logic_vector(3 downto 0);
     type T_dma_fifo is array (0 to 15) of std_logic_vector(31 downto 0);
     signal M_dma_fifo: T_dma_fifo;
+    attribute syn_ramstyle of M_dma_fifo: signal is "no_rw_check";
     signal R_pixel_index: std_logic_vector(1 downto 0);
+    signal R_hcnt: std_logic_vector(8 downto 0);
 
     -- main clk domain, framebuffer, wires
     signal frame_gap: boolean;
@@ -104,15 +107,23 @@ begin
 		R_dma_fifo_head <= (others => '0');
 		R_dma_fifo_tail <= (others => '0');
 		R_pixel_index <= (others => '0');
+		R_hcnt <= (others => '0');
 	    else
 		if dma_resp.data_ready = '1' then
 		    M_dma_fifo(conv_integer(R_dma_fifo_head)) <=
 		      dma_resp.data_out;
 		    R_dma_cur <= R_dma_cur + 1;
 		    R_dma_fifo_head <= R_dma_fifo_head + 1;
-		end if;
-
-		if dma_fifo_may_fetch then
+		    R_hcnt <= R_hcnt + 1;
+		    if R_hcnt = R_hdisp(10 downto 2) - 1 then
+			R_hcnt <= (others => '0');
+			if R_interlace = '1' then
+			    R_dma_cur <= R_dma_cur + R_hdisp(10 downto 2) + 1;
+			end if;
+		    end if;
+		    if R_dma_cur = R_dma_end then
+			R_dma_cur <= R_dma_base + R_hdisp(10 downto 2);
+		    end if;
 		end if;
 
 		if pixel_fifo_needs_more_pixels and dma_fifo_has_data then
@@ -187,6 +198,8 @@ begin
 		    end if;
 		when x"4" =>
 		    R_dma_base <= bus_in(31 downto 2);
+		when x"5" =>
+		    R_dma_end <= bus_in(31 downto 2);
 		when others =>
 		end case;
 	    end if;
@@ -201,7 +214,8 @@ begin
 	--R_interlace & R_vsyncn & R_hsyncn & "00"
 	--  & R_vtotal & x"0" & '0' & R_vsyncend when x"3",
 	R_dma_base & "00" when x"4",
-	R_dma_cur & "00" when x"5",
+	R_dma_end & "00" when x"5",
+	R_dma_cur & "00" when x"6",
 	(others => '0') when others;
 
     I_syncgen: entity work.dv_syncgen
