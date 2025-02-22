@@ -26,14 +26,14 @@ end dvi_fb;
 
 architecture x of dvi_fb is
 
-    type T_fifo is array (0 to 511) of std_logic_vector(23 downto 0);
-    signal M_fifo: T_fifo; -- WR in clk, RD in pixclk clock domain
+    type T_pixel_fifo is array (0 to 511) of std_logic_vector(23 downto 0);
+    signal M_pixel_fifo: T_pixel_fifo; -- WR in clk, RD in pixclk clock domain
     attribute syn_ramstyle: string; -- Lattice Diamond
-    attribute syn_ramstyle of M_fifo: signal is "no_rw_check";
+    attribute syn_ramstyle of M_pixel_fifo: signal is "no_rw_check";
 
     -- pixclk domain, registers
-    signal R_fifo_tail: std_logic_vector(8 downto 0);
-    signal R_from_fifo: std_logic_vector(23 downto 0);
+    signal R_pixel_fifo_tail: std_logic_vector(8 downto 0);
+    signal R_from_pixel_fifo: std_logic_vector(23 downto 0);
     signal R_r, R_g, R_b: std_logic_vector(7 downto 0);
     signal R_hsync, R_vsync, R_blank: std_logic;
 
@@ -41,12 +41,12 @@ architecture x of dvi_fb is
     signal dv_vsync, dv_hsync, dv_active, dv_field, dv_frame_gap: std_logic;
 
     -- pixclk -> clk clock domain crossing synchronizers
-    signal R_t_fifo_sync: std_logic_vector(2 downto 0);
+    signal R_pixel_fifo_sync: std_logic_vector(2 downto 0);
     signal R_t_frame_gap_sync: std_logic_vector(2 downto 0);
 
     -- main clk domain, fifo clk -> pixclk clock domain
-    signal R_fifo_tail_cdc: std_logic_vector(8 downto 4);
-    signal R_fifo_head: std_logic_vector(8 downto 0);
+    signal R_pixel_fifo_tail_cdc: std_logic_vector(8 downto 4);
+    signal R_pixel_fifo_head: std_logic_vector(8 downto 0);
 
     -- main clk domain, framebuffer
     signal R_dma_base: std_logic_vector(31 downto 2);
@@ -113,19 +113,20 @@ begin
 	    end if;
 
 	    -- clock-domain crossing synchronizers (from pixclk)
-	    R_t_fifo_sync <= R_fifo_tail(4) & R_t_fifo_sync(2 downto 1);
+	    R_pixel_fifo_sync <=
+	      R_pixel_fifo_tail(4) & R_pixel_fifo_sync(2 downto 1);
 	    R_t_frame_gap_sync <= dv_frame_gap & R_t_frame_gap_sync(2 downto 1);
-	    if R_t_fifo_sync(1) /= R_t_fifo_sync(0)
+	    if R_pixel_fifo_sync(1) /= R_pixel_fifo_sync(0)
 	      or R_t_frame_gap_sync(0) = '1' then
-		R_fifo_tail_cdc <= R_fifo_tail(8 downto 4);
+		R_pixel_fifo_tail_cdc <= R_pixel_fifo_tail(8 downto 4);
 	    end if;
 
 	    if R_t_frame_gap_sync(0) = '1' then
 		-- Idle
 		R_dma_cur <= R_dma_base;
-		R_fifo_head <= (others => '0');
-	    elsif R_fifo_tail_cdc /= R_fifo_head(8 downto 4) + 1 then
-		R_fifo_head <= R_fifo_head + 1;
+		R_pixel_fifo_head <= (others => '0');
+	    elsif R_pixel_fifo_tail_cdc /= R_pixel_fifo_head(8 downto 4) +1 then
+		R_pixel_fifo_head <= R_pixel_fifo_head + 1;
 		R_dma_cur <= R_dma_cur + 1;
 	    end if;
 
@@ -133,7 +134,7 @@ begin
 	    g := R_dma_cur(15 downto 8);
 	    b := R_dma_cur(21 downto 14);
 
-	    M_fifo(conv_integer(R_fifo_head)) <= r & g & b;
+	    M_pixel_fifo(conv_integer(R_pixel_fifo_head)) <= r & g & b;
 	end if;
     end process;
 
@@ -168,14 +169,14 @@ begin
 	    R_hsync <= dv_hsync;
 	    R_vsync <= dv_vsync;
 	    if dv_frame_gap = '1' then
-		R_fifo_tail <= (others => '0');
+		R_pixel_fifo_tail <= (others => '0');
 	    elsif dv_active = '1' then
-		R_fifo_tail <= R_fifo_tail + 1;
+		R_pixel_fifo_tail <= R_pixel_fifo_tail + 1;
 	    end if;
-	    R_from_fifo <= M_fifo(conv_integer(R_fifo_tail));
-	    R_r <= R_from_fifo(23 downto 16);
-	    R_g <= R_from_fifo(15 downto 8);
-	    R_b <= R_from_fifo(7 downto 0);
+	    R_from_pixel_fifo <= M_pixel_fifo(conv_integer(R_pixel_fifo_tail));
+	    R_r <= R_from_pixel_fifo(23 downto 16);
+	    R_g <= R_from_pixel_fifo(15 downto 8);
+	    R_b <= R_from_pixel_fifo(7 downto 0);
 	end if;
     end process;
 
