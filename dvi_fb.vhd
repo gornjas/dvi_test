@@ -3,6 +3,8 @@ use ieee.std_logic_1164.all;
 use ieee.std_logic_arith.all;
 use ieee.std_logic_unsigned.all;
 
+use work.sdram_pack.all;
+
 entity dvi_fb is
     port (
 	clk: in std_logic;
@@ -14,6 +16,8 @@ entity dvi_fb is
 	bus_in: in std_logic_vector(31 downto 0);
 	bus_out: out std_logic_vector(31 downto 0);
 	-- DMA master: todo
+	dma_req: sdram_req_type;
+	dma_resp: sdram_resp_type;
 	-- Digital video
 	pixclk, pixclk_x5: in std_logic;
 	dv_clk, dv_r, dv_g, dv_b: out std_logic_vector(1 downto 0)
@@ -44,10 +48,9 @@ architecture x of dvi_fb is
     signal R_fifo_tail_cdc: std_logic_vector(8 downto 4);
     signal R_fifo_head: std_logic_vector(8 downto 0);
 
-    -- main clk domain, test picture generator
-    signal R_t_hpos, R_t_vpos: std_logic_vector(11 downto 0);
-    signal R_t_frame_done: boolean;
-    signal R_t_framecnt: std_logic_vector(7 downto 0);
+    -- main clk domain, framebuffer
+    signal R_dma_base: std_logic_vector(31 downto 2);
+    signal R_dma_cur: std_logic_vector(31 downto 2);
 
     -- clk domain, (mostly) static linemode configuration data
     signal R_hdisp: std_logic_vector(11 downto 0);
@@ -69,7 +72,7 @@ begin
 	variable r, g, b: std_logic_vector(7 downto 0);
     begin
 	if rising_edge(clk) then
-	    -- mode configuration registers
+	    -- CPU interface: configuration registers
 	    if ce = '1' and bus_write = '1' then
 		case bus_addr is
 		when x"0" =>
@@ -103,6 +106,8 @@ begin
 			R_vsyncn <= bus_in(30);
 			R_interlace <= bus_in(31);
 		    end if;
+		when x"4" =>
+		    R_dma_base <= bus_in(31 downto 2);
 		when others =>
 		end case;
 	    end if;
@@ -110,46 +115,23 @@ begin
 	    -- clock-domain crossing synchronizers (from pixclk)
 	    R_t_fifo_sync <= R_fifo_tail(4) & R_t_fifo_sync(2 downto 1);
 	    R_t_frame_gap_sync <= dv_frame_gap & R_t_frame_gap_sync(2 downto 1);
-
 	    if R_t_fifo_sync(1) /= R_t_fifo_sync(0)
 	      or R_t_frame_gap_sync(0) = '1' then
 		R_fifo_tail_cdc <= R_fifo_tail(8 downto 4);
 	    end if;
 
 	    if R_t_frame_gap_sync(0) = '1' then
+		-- Idle
+		R_dma_cur <= R_dma_base;
 		R_fifo_head <= (others => '0');
-		R_t_hpos <= (others => '0');
-		R_t_vpos <= (others => '0');
-		R_t_frame_done <= false;
-		if R_t_frame_done then
-		    R_t_framecnt <= R_t_framecnt + 1;
-		end if;
-	    elsif not R_t_frame_done and
-	      R_fifo_tail_cdc /= R_fifo_head(8 downto 4) + 1 then
-		if not R_t_frame_done then
-		    R_fifo_head <= R_fifo_head + 1;
-		end if;
-		R_t_hpos <= R_t_hpos + 1;
-		if R_t_hpos + 1 = R_hdisp then
-		    R_t_hpos <= (others => '0');
-		    if R_t_vpos(10 downto 1) = R_vdisp(10 downto 1) - 1 then
-			R_t_frame_done <= true;
-			if R_interlace = '1' and R_t_vpos(0) = '0' then
-			    R_t_vpos <= x"001";
-			    R_t_frame_done <= false;
-			end if;
-		    else
-			R_t_vpos <= R_t_vpos + 1;
-			if R_interlace = '1' then
-			    R_t_vpos <= R_t_vpos + 2;
-			end if;
-		    end if;
-		end if;
+	    elsif R_fifo_tail_cdc /= R_fifo_head(8 downto 4) + 1 then
+		R_fifo_head <= R_fifo_head + 1;
+		R_dma_cur <= R_dma_cur + 1;
 	    end if;
 
-	    r := R_t_hpos(7 downto 0);
-	    g := R_t_vpos(7 downto 0);
-	    b := R_t_framecnt;
+	    r := R_dma_cur(9 downto 2);
+	    g := R_dma_cur(15 downto 8);
+	    b := R_dma_cur(21 downto 14);
 
 	    M_fifo(conv_integer(R_fifo_head)) <= r & g & b;
 	end if;
@@ -203,6 +185,8 @@ begin
 	--x"0" & '0' & R_vsyncstart & x"0" & '0' & R_vdisp when x"2",
 	--R_interlace & R_vsyncn & R_hsyncn & "00"
 	--  & R_vtotal & x"0" & '0' & R_vsyncend when x"3",
+	R_dma_base & "00" when x"4",
+	R_dma_cur & "00" when x"5",
 	(others => '0') when others;
 
     I_dvid: entity work.vga2dvid
