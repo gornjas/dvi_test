@@ -115,11 +115,10 @@ begin
 		    R_dma_cur <= R_dma_cur + 1;
 		    R_dma_fifo_head <= R_dma_fifo_head + 1;
 		    R_hcnt <= R_hcnt + 1;
-		    if R_hcnt = R_hdisp(10 downto 2) - 1 then
+		    if R_interlace = '1'
+		      and  R_hcnt = R_hdisp(10 downto 2) - 1 then
 			R_hcnt <= (others => '0');
-			if R_interlace = '1' then
-			    R_dma_cur <= R_dma_cur + R_hdisp(10 downto 2) + 1;
-			end if;
+			R_dma_cur <= R_dma_cur + R_hdisp(10 downto 2) + 1;
 		    end if;
 		    if R_dma_cur = R_dma_end then
 			R_dma_cur <= R_dma_base + R_hdisp(10 downto 2);
@@ -134,10 +133,10 @@ begin
 		    when "10" => pixel := from_dma_fifo(23 downto 16);
 		    when others => pixel := from_dma_fifo(31 downto 24);
 		    end case;
-		    r :=  pixel(7 downto 6) & pixel(7 downto 6)
-		      & pixel(7 downto 6) & pixel(7 downto 6);
-		    g :=  pixel(5 downto 3) & pixel(5 downto 3)
-		      & pixel(5 downto 4);
+		    r :=  pixel(7 downto 5) & pixel(7 downto 5)
+		      & pixel(7 downto 6);
+		    g :=  pixel(4 downto 2) & pixel(4 downto 2)
+		      & pixel(4 downto 3);
 		    b := pixel(1 downto 0) & pixel(1 downto 0)
 		      & pixel(1 downto 0) & pixel(1 downto 0);
 		    pixel_ready := true;
