@@ -1,3 +1,28 @@
+--
+-- Copyright (c) 2025 Marko Zec
+--
+-- Redistribution and use in source and binary forms, with or without
+-- modification, are permitted provided that the following conditions
+-- are met:
+-- 1. Redistributions of source code must retain the above copyright
+--    notice, this list of conditions and the following disclaimer.
+-- 2. Redistributions in binary form must reproduce the above copyright
+--    notice, this list of conditions and the following disclaimer in the
+--    documentation and/or other materials provided with the distribution.
+--
+-- THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+-- ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+-- IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+-- ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+-- FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+-- DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+-- OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+-- HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+-- LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+-- OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+-- SUCH DAMAGE.
+--
+
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.std_logic_arith.all;
@@ -15,7 +40,7 @@ entity dvi_fb is
 	bus_addr: in std_logic_vector(5 downto 2);
 	bus_in: in std_logic_vector(31 downto 0);
 	bus_out: out std_logic_vector(31 downto 0);
-	-- DMA master: todo
+	-- DMA master
 	dma_req: out sdram_req_type;
 	dma_resp: in sdram_resp_type;
 	-- Digital video
@@ -25,45 +50,67 @@ entity dvi_fb is
 end dvi_fb;
 
 architecture x of dvi_fb is
-
+    -- pixel fifo: fills in clk domain, drains in pixclk domain
     type T_pixel_fifo is array (0 to 511) of std_logic_vector(23 downto 0);
-    signal M_pixel_fifo: T_pixel_fifo; -- WR in clk, RD in pixclk clock domain
+    signal M_pixel_fifo: T_pixel_fifo;
     attribute syn_ramstyle: string; -- Lattice Diamond
     attribute syn_ramstyle of M_pixel_fifo: signal is "no_rw_check";
 
     -- pixclk domain, registers
-    signal R_pixel_fifo_tail: std_logic_vector(8 downto 0);
-    signal R_from_pixel_fifo: std_logic_vector(23 downto 0);
-    signal R_r, R_g, R_b: std_logic_vector(7 downto 0);
-    signal R_hsync, R_vsync, R_blank: std_logic;
-
-    -- pixclk domain, wires
-    signal dv_vsync, dv_hsync, dv_active, dv_field, dv_frame_gap: std_logic;
+    signal Rp_fifo_tail: std_logic_vector(8 downto 0);
+    signal Rp_from_fifo: std_logic_vector(23 downto 0);
+    signal Rp_r, Rp_g, Rp_b: std_logic_vector(7 downto 0);
+    signal Rp_hsync_dly, Rp_vsync_dly, Rp_blank_dly: std_logic;
+    signal Rp_hstate: std_logic_vector(1 downto 0);
+    signal Rp_vstate: std_logic_vector(1 downto 0);
+    signal Rp_hpos: std_logic_vector(11 downto 0);
+    signal Rp_vpos: std_logic_vector(10 downto 0);
+    signal Rp_hbound: std_logic_vector(47 downto 0);
+    signal Rp_vbound: std_logic_vector(43 downto 0);
+    signal Rp_vsync_delay: std_logic_vector(11 downto 0);
+    signal Rp_skip_line: boolean;
+    signal Rp_hsync: std_logic;
+    signal Rp_vsync: std_logic;
+    signal Rp_active: std_logic;
+    signal Rp_field: std_logic;
+    signal Rp_frame_gap: std_logic;
+    -- mode configuration registers, mainly static, synchronized from main clk
+    signal Rp_hdisp: std_logic_vector(11 downto 0);
+    signal Rp_hsyncstart: std_logic_vector(11 downto 0);
+    signal Rp_hsyncend: std_logic_vector(11 downto 0);
+    signal Rp_htotal: std_logic_vector(11 downto 0);
+    signal Rp_vdisp: std_logic_vector(10 downto 0);
+    signal Rp_vsyncstart: std_logic_vector(10 downto 0);
+    signal Rp_vsyncend: std_logic_vector(10 downto 0);
+    signal Rp_vtotal: std_logic_vector(10 downto 0);
+    signal Rp_hsyncn: std_logic;
+    signal Rp_vsyncn: std_logic;
+    signal Rp_interlace: std_logic;
 
     -- pixclk -> clk clock domain crossing synchronizers
     signal R_pixel_fifo_sync: std_logic_vector(2 downto 0);
-    signal R_t_frame_gap_sync: std_logic_vector(2 downto 0);
+    signal R_frame_gap_sync: std_logic_vector(2 downto 0);
 
     -- main clk domain, fifo clk -> pixclk clock domain
     signal R_pixel_fifo_tail_cdc: std_logic_vector(8 downto 4);
     signal R_pixel_fifo_head: std_logic_vector(8 downto 0);
 
     -- main clk domain, framebuffer, registers
+    type T_dma_fifo is array (0 to 511) of std_logic_vector(31 downto 0);
+    signal M_dma_fifo: T_dma_fifo;
     signal R_dma_base: std_logic_vector(31 downto 2);
     signal R_dma_end: std_logic_vector(31 downto 2);
     signal R_dma_cur: std_logic_vector(31 downto 2);
-    signal R_dma_fifo_head, R_dma_fifo_tail: std_logic_vector(3 downto 0);
-    type T_dma_fifo is array (0 to 15) of std_logic_vector(31 downto 0);
-    signal M_dma_fifo: T_dma_fifo;
+    signal R_dma_fifo_head, R_dma_fifo_tail: std_logic_vector(8 downto 0);
     attribute syn_ramstyle of M_dma_fifo: signal is "no_rw_check";
     signal R_pixel_index: std_logic_vector(1 downto 0);
-    signal R_hcnt: std_logic_vector(8 downto 0);
+    signal R_hcnt: std_logic_vector(10 downto 0);
 
     -- main clk domain, framebuffer, wires
     signal frame_gap: boolean;
     signal pixel_fifo_needs_more_pixels: boolean;
     signal dma_fifo_may_fetch, dma_fifo_has_data: boolean;
-    signal dma_fifo_head_next, dma_fifo_tail_next: std_logic_vector(3 downto 0);
+    signal dma_fifo_head_next, dma_fifo_tail_next: std_logic_vector(8 downto 0);
 
     -- main clk domain, (mostly) static linemode configuration data
     signal R_hdisp: std_logic_vector(11 downto 0);
@@ -79,22 +126,22 @@ architecture x of dvi_fb is
     signal R_interlace: std_logic;
 
 begin
-    frame_gap <= R_t_frame_gap_sync(0) = '1';
     pixel_fifo_needs_more_pixels <=
       R_pixel_fifo_tail_cdc /= R_pixel_fifo_head(8 downto 4) + 1;
-    dma_fifo_may_fetch <=
-      R_dma_fifo_head(3 downto 2) + 1 /= R_dma_fifo_tail(3 downto 2);
+    frame_gap <= R_frame_gap_sync(0) = '1';
+    dma_fifo_may_fetch <= not frame_gap and
+      R_dma_fifo_head(8 downto 5) + 1 /= R_dma_fifo_tail(8 downto 5);
     dma_fifo_has_data <= R_dma_fifo_head /= R_dma_fifo_tail;
 
     dma_req.addr <= R_dma_cur;
     dma_req.strobe <= '1' when dma_fifo_may_fetch else '0';
-    dma_req.burst_len <= x"03";
+    dma_req.burst_len <= x"1f";
     dma_req.write <= '0';
 
     process(clk)
 	variable pixel_ready: boolean;
 	variable from_dma_fifo: std_logic_vector(31 downto 0);
-	variable pixel: std_logic_vector(7 downto 0);
+	variable pixel: std_logic_vector(15 downto 0);
 	variable r, g, b: std_logic_vector(7 downto 0);
     begin
 	if rising_edge(clk) then
@@ -116,32 +163,30 @@ begin
 		    R_dma_fifo_head <= R_dma_fifo_head + 1;
 		    R_hcnt <= R_hcnt + 1;
 		    if R_interlace = '1'
-		      and  R_hcnt = R_hdisp(10 downto 2) - 1 then
+		      --and R_hcnt = R_hdisp(10 downto 2) - 1 then
+		      and R_hcnt = R_hdisp(10 downto 1) - 1 then
 			R_hcnt <= (others => '0');
-			R_dma_cur <= R_dma_cur + R_hdisp(10 downto 2) + 1;
+			--R_dma_cur <= R_dma_cur + R_hdisp(10 downto 2) + 1;
+			R_dma_cur <= R_dma_cur + R_hdisp(10 downto 1) + 1;
 		    end if;
 		    if R_dma_cur = R_dma_end then
-			R_dma_cur <= R_dma_base + R_hdisp(10 downto 2);
+			--R_dma_cur <= R_dma_base + R_hdisp(10 downto 2);
+			R_dma_cur <= R_dma_base + R_hdisp(10 downto 1);
 		    end if;
 		end if;
 
 		if pixel_fifo_needs_more_pixels and dma_fifo_has_data then
 		    from_dma_fifo := M_dma_fifo(conv_integer(R_dma_fifo_tail));
 		    case R_pixel_index is
-		    when "00" => pixel := from_dma_fifo(7 downto 0);
-		    when "01" => pixel := from_dma_fifo(15 downto 8);
-		    when "10" => pixel := from_dma_fifo(23 downto 16);
-		    when others => pixel := from_dma_fifo(31 downto 24);
+		    when "00" => pixel := from_dma_fifo(15 downto 0);
+		    when others => pixel := from_dma_fifo(31 downto 16);
 		    end case;
-		    r :=  pixel(7 downto 5) & pixel(7 downto 5)
-		      & pixel(7 downto 6);
-		    g :=  pixel(4 downto 2) & pixel(4 downto 2)
-		      & pixel(4 downto 3);
-		    b := pixel(1 downto 0) & pixel(1 downto 0)
-		      & pixel(1 downto 0) & pixel(1 downto 0);
+		    r :=  pixel(15 downto 11) & pixel(15 downto 13);
+		    g :=  pixel(10 downto 5) & pixel(10 downto 9);
+		    b := pixel(4 downto 0) & pixel(4 downto 2);
 		    pixel_ready := true;
-		    R_pixel_index <= R_pixel_index + 1;
-		    if R_pixel_index = "11" then
+		    R_pixel_index <= R_pixel_index + 2;
+		    if R_pixel_index = "10" then
 			R_dma_fifo_tail <= R_dma_fifo_tail + 1;
 		    end if;
 		end if;
@@ -154,11 +199,11 @@ begin
 
 	    -- pixclk -> clk clock-domain crossing synchronizers
 	    R_pixel_fifo_sync <=
-	      R_pixel_fifo_tail(4) & R_pixel_fifo_sync(2 downto 1);
-	    R_t_frame_gap_sync <= dv_frame_gap & R_t_frame_gap_sync(2 downto 1);
+	      Rp_fifo_tail(4) & R_pixel_fifo_sync(2 downto 1);
+	    R_frame_gap_sync <= Rp_frame_gap & R_frame_gap_sync(2 downto 1);
 	    if R_pixel_fifo_sync(1) /= R_pixel_fifo_sync(0)
-	      or R_t_frame_gap_sync(0) = '1' then
-		R_pixel_fifo_tail_cdc <= R_pixel_fifo_tail(8 downto 4);
+	      or R_frame_gap_sync(0) = '1' then
+		R_pixel_fifo_tail_cdc <= Rp_fifo_tail(8 downto 4);
 	    end if;
 
 	    -- CPU interface: configuration registers
@@ -217,45 +262,114 @@ begin
 	R_dma_cur & "00" when x"6",
 	(others => '0') when others;
 
-    I_syncgen: entity work.dv_syncgen
-    port map (
-	pixclk => pixclk,
-	-- mode config
-	hdisp => R_hdisp,
-	hsyncstart => R_hsyncstart,
-	hsyncend => R_hsyncend,
-	htotal => R_htotal,
-	vdisp => R_vdisp,
-	vsyncstart => R_vsyncstart,
-	vsyncend => R_vsyncend,
-	vtotal => R_vtotal,
-	hsyncn => R_hsyncn,
-	vsyncn => R_vsyncn,
-	interlace => R_interlace,
-	-- outputs
-	hsync => dv_hsync,
-	vsync => dv_vsync,
-	active => dv_active,
-	field => dv_field,
-	frame_gap => dv_frame_gap
-    );
-
     process(pixclk)
+	variable hsync: boolean;
     begin
 	if rising_edge(pixclk) then
-	    -- from line buffer and dv_syncgen to vga2dvid
-	    R_blank <= not dv_active;
-	    R_hsync <= dv_hsync;
-	    R_vsync <= dv_vsync;
-	    if dv_frame_gap = '1' then
-		R_pixel_fifo_tail <= (others => '0');
-	    elsif dv_active = '1' then
-		R_pixel_fifo_tail <= R_pixel_fifo_tail + 1;
+	    -- configuration registers, synchronizing to pixclk
+	    Rp_hdisp <= R_hdisp;
+	    Rp_hsyncstart <= R_hsyncstart;
+	    Rp_hsyncend <= R_hsyncend;
+	    Rp_htotal <= R_htotal;
+	    Rp_vdisp <= R_vdisp;
+	    Rp_vsyncstart <= R_vsyncstart;
+	    Rp_vsyncend <= R_vsyncend;
+	    Rp_vtotal <= R_vtotal;
+	    Rp_hsyncn <= R_hsyncn;
+	    Rp_vsyncn <= R_vsyncn;
+	    Rp_interlace <= R_interlace;
+
+	    -- sync signal generator
+	    Rp_hpos <= Rp_hpos + 1;
+	    hsync := false;
+	    if Rp_hpos = Rp_hbound(11 downto 0) then
+		Rp_hstate <= Rp_hstate + 1;
+		if Rp_hstate = "11" then
+		    Rp_hbound <= Rp_htotal & Rp_hsyncend
+		      & Rp_hsyncstart & Rp_hdisp;
+		    Rp_hpos <= conv_std_logic_vector(1, 12);
+		else
+		    Rp_hbound(35 downto 0) <= Rp_hbound(47 downto 12);
+		end if;
+		case Rp_hstate is
+		when "00" =>
+		    Rp_active <= '0';
+		when "01" =>
+		    Rp_hsync <= not Rp_hsyncn;
+		    hsync := true;
+		when "10" =>
+		    Rp_hsync <= Rp_hsyncn;
+		when others => -- "11"
+		    if Rp_vstate = "00" and not Rp_skip_line then
+			Rp_active <= '1';
+		    end if;
+		    Rp_skip_line <= false;
+		end case;
 	    end if;
-	    R_from_pixel_fifo <= M_pixel_fifo(conv_integer(R_pixel_fifo_tail));
-	    R_r <= R_from_pixel_fifo(23 downto 16);
-	    R_g <= R_from_pixel_fifo(15 downto 8);
-	    R_b <= R_from_pixel_fifo(7 downto 0);
+	    if hsync then
+		Rp_vpos <= Rp_vpos + 1;
+		if Rp_interlace = '1' then
+		    Rp_vpos <= Rp_vpos + 2;
+		end if;
+		if Rp_vpos(10 downto 1) = Rp_vbound(10 downto 1) and
+		  (Rp_interlace = '1' or (Rp_vpos(0) = Rp_vbound(0))) then
+		    Rp_vstate <= Rp_vstate + 1;
+		    Rp_vbound(32 downto 0) <= Rp_vbound(43 downto 11);
+		    case Rp_vstate is
+		    when "00" =>
+			Rp_field <= Rp_interlace and not Rp_field;
+			Rp_frame_gap <= not Rp_interlace or Rp_field;
+		    when "01" =>
+			if Rp_field = '0' then
+			    Rp_vsync <= not Rp_vsyncn;
+			else
+			    Rp_vsync_delay <= '0' & Rp_htotal(11 downto 1);
+			end if;
+		    when "10" =>
+			if Rp_field = '0' then
+			    Rp_vsync <= Rp_vsyncn;
+			else
+			    Rp_vsync_delay <= '0' & Rp_htotal(11 downto 1);
+			end if;
+		    when "11" =>
+			Rp_vbound <= Rp_vtotal & Rp_vsyncend
+			  & Rp_vsyncstart & Rp_vdisp;
+			Rp_vpos <= conv_std_logic_vector(1, 11);
+			if Rp_interlace = '1' then
+			    if Rp_field = '0' then
+				Rp_vpos <= conv_std_logic_vector(2, 11);
+			    elsif Rp_vtotal(0) = '1' then
+				Rp_skip_line <= true;
+			    end if;
+			end if;
+			if Rp_interlace = '0' or Rp_field = '0' then
+			    Rp_frame_gap <= '0';
+			end if;
+		    when others =>
+			-- nothing to do, appease the tools
+		    end case;
+		end if;
+	    end if;
+	    if Rp_vsync_delay(11) = '0' then
+		Rp_vsync_delay <= Rp_vsync_delay - 1;
+		if Rp_vsync_delay = 0 then
+		    Rp_vsync <= not Rp_vsync;
+		end if;
+	    end if;
+
+	    -- from line buffer and syncgen to vga2dvid
+	    Rp_blank_dly <= not Rp_active;
+	    Rp_hsync_dly <= Rp_hsync;
+	    Rp_vsync_dly <= Rp_vsync;
+	    if Rp_frame_gap = '1' then
+		Rp_fifo_tail <= (others => '0');
+	    elsif Rp_active = '1' then
+		Rp_fifo_tail <= Rp_fifo_tail + 1;
+	    end if;
+	    Rp_from_fifo <= M_pixel_fifo(conv_integer(Rp_fifo_tail));
+	    Rp_r <= Rp_from_fifo(23 downto 16);
+	    Rp_g <= Rp_from_fifo(15 downto 8);
+	    Rp_b <= Rp_from_fifo(7 downto 0);
 	end if;
     end process;
 
@@ -267,12 +381,12 @@ begin
     port map (
 	clk_pixel => pixclk,
 	clk_shift => pixclk_x5,
-	in_red => R_r,
-	in_green => R_g,
-	in_blue => R_b,
-	in_hsync => R_hsync,
-	in_vsync => R_vsync,
-	in_blank => R_blank,
+	in_red => Rp_r,
+	in_green => Rp_g,
+	in_blue => Rp_b,
+	in_hsync => Rp_hsync_dly,
+	in_vsync => Rp_vsync_dly,
+	in_blank => Rp_blank_dly,
 	out_clock => dv_clk,
 	out_red => dv_r,
 	out_green => dv_g,
